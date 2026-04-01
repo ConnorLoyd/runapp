@@ -202,8 +202,16 @@ html, body {
   position: relative;
   width: 100%;
   height: calc(100vh - var(--header-height) - var(--nav-height) - var(--safe-bottom));
+  height: calc(100dvh - var(--header-height) - var(--nav-height) - var(--safe-bottom));
   background: var(--bg-primary);
   overflow: hidden;
+}
+
+#page-map {
+  overflow: hidden;
+  height: calc(100vh - var(--header-height) - var(--nav-height) - var(--safe-bottom));
+  height: calc(100dvh - var(--header-height) - var(--nav-height) - var(--safe-bottom));
+  padding-bottom: 0;
 }
 
 #map {
