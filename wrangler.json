@@ -1,0 +1,16 @@
+{
+	"compatibility_date": "2025-10-08",
+	"main": "src/index.ts",
+	"name": "runapp",
+	"upload_source_maps": true,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_id": "f3daacf4-d614-43e5-803f-aa960e1ab580",
+			"database_name": "runningapp-db"
+		}
+	],
+	"observability": {
+		"enabled": true
+	}
+}
