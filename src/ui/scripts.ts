@@ -1,29 +1,75 @@
-﻿export function getScripts(): string {
+export function getScripts(): string {
   return `
 (function() {
-  // ========== API Helpers ==========
   var currentUser = null;
-  var currentGroup = null;
   var territoryState = null;
   var H3_RES = 9;
   var DEFAULT_ZOOM = 15;
+  var LEVEL_COSTS = [5, 15, 30, 50, 80];
+  var SKILL_ICONS = {
+    'wide-scan': '\\u{1F52D}', 'strike-force': '\\u{1F4A5}', 'shield': '\\u{1F6E1}\\uFE0F',
+    'trailblazer': '\\u{1F3C3}', 'ghost-run': '\\u{1F47B}'
+  };
+  var SKILL_NAMES = {
+    'wide-scan': 'Wide Scan', 'strike-force': 'Strike Force', 'shield': 'Shield',
+    'trailblazer': 'Trailblazer', 'ghost-run': 'Ghost Run'
+  };
+  var SKILL_DESCS = {
+    'wide-scan': 'Reveals adjacent cells as you run, expanding fog reveal.',
+    'strike-force': 'Your RP counts for more in enemy-owned cells.',
+    'shield': 'Bonus RP in friendly-owned cells, reinforcing territory.',
+    'trailblazer': 'Earn bonus RP in unclaimed or newly discovered cells.',
+    'ghost-run': 'Enemy players don\\u2019t see your activity in their territory.'
+  };
+  var SKILL_STATS = {
+    'wide-scan': {
+      label: 'Reveal Range',
+      values: ['None', '1 ring', '1 ring', '2 rings', '2 rings', '3 rings'],
+      bonus:  ['',     '',       '',       '25% chance +1', '', '25% chance +1'],
+      unit: ''
+    },
+    'strike-force': {
+      label: 'Enemy Cell Multiplier',
+      values: ['1x', '1.5x', '1.75x', '2x', '2.5x', '3x'],
+      bonus:  ['',   '',     '',       '',   '',     ''],
+      unit: ' RP/cell'
+    },
+    'shield': {
+      label: 'Friendly Cell Bonus',
+      values: ['+0', '+0.5', '+1', '+1.5', '+2', '+2.5'],
+      bonus:  ['',   '',     '',   '',     '',   ''],
+      unit: ' RP/cell'
+    },
+    'trailblazer': {
+      label: 'Unclaimed Cell Bonus',
+      values: ['+0', '+1', '+1.5', '+2', '+2.5', '+3'],
+      bonus:  ['',   '',   '',     '',   '',     ''],
+      unit: ' RP/cell'
+    },
+    'ghost-run': {
+      label: 'Stealth',
+      values: ['Off', 'Active', 'Active', 'Active', 'Active', 'Active'],
+      bonus:  ['', 'Runs hidden from enemies', 'Runs hidden from enemies', 'Runs hidden from enemies', 'Runs hidden from enemies', 'Runs hidden from enemies'],
+      unit: ''
+    }
+  };
 
+  // ========== API ==========
   function apiGet(url) {
-    return fetch(url).then(function(r) { return r.json(); });
+    return fetch(url, { credentials: 'same-origin' }).then(function(r) {
+      if (r.status === 401) return { error: 'Not authenticated', status: 401 };
+      return r.json();
+    });
   }
-
   function apiPost(url, body) {
-    return fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    }).then(function(r) { return r.json(); });
+    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin' })
+      .then(function(r) { return r.json(); });
   }
 
-  // ========== Page Navigation ==========
-  var allNavItems = document.querySelectorAll('.nav-item, .quick-btn[data-page], .header-btn[data-page]');
+  // ========== Navigation ==========
   var pages = document.querySelectorAll('.page');
   var bottomNavItems = document.querySelectorAll('.bottom-nav .nav-item');
+  var allNavItems = document.querySelectorAll('.nav-item, .header-btn[data-page]');
 
   function navigateTo(pageId) {
     pages.forEach(function(p) { p.classList.remove('active'); });
@@ -33,6 +79,10 @@
     if (page) page.classList.add('active');
     if (nav) nav.classList.add('active');
     document.querySelector('.page-container').scrollTop = 0;
+    if (pageId === 'page-map' && turfMap) setTimeout(function() { turfMap.invalidateSize(); loadTerritory().then(function() { renderHexGrid(); updateMapOverlayStats(); }); }, 100);
+    if (pageId === 'page-group') loadGroupData();
+    if (pageId === 'page-leaderboard') loadLeaderboard();
+    if (pageId === 'page-profile') loadRuns();
   }
 
   allNavItems.forEach(function(item) {
@@ -42,350 +92,329 @@
     });
   });
 
-  // ========== Skill Tabs ==========
-  document.querySelectorAll('.skill-tab').forEach(function(tab) {
-    tab.addEventListener('click', function() {
-      var target = tab.getAttribute('data-skill-tab');
-      document.querySelectorAll('.skill-tab').forEach(function(t) { t.classList.remove('active'); });
-      tab.classList.add('active');
-      document.querySelectorAll('.skill-panel').forEach(function(p) { p.classList.remove('active'); });
-      var panel = document.getElementById('skills-' + target);
-      if (panel) panel.classList.add('active');
-    });
-  });
-
-  // ========== Leaderboard Toggles ==========
-  var lbScope = 'local';
-  var lbType = 'groups';
-
-  function updateLeaderboard() {
-    document.querySelectorAll('.lb-panel').forEach(function(p) { p.classList.remove('active'); });
-    var panel = document.getElementById('lb-' + lbScope + '-' + lbType);
-    if (panel) panel.classList.add('active');
-  }
-
-  document.querySelectorAll('#lb-scope-toggle .lb-scope-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      document.querySelectorAll('#lb-scope-toggle .lb-scope-btn').forEach(function(b) { b.classList.remove('active'); });
-      btn.classList.add('active');
-      lbScope = btn.getAttribute('data-scope');
-      updateLeaderboard();
-    });
-  });
-
-  document.querySelectorAll('#lb-type-toggle .lb-type-pill').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      document.querySelectorAll('#lb-type-toggle .lb-type-pill').forEach(function(b) { b.classList.remove('active'); });
-      btn.classList.add('active');
-      lbType = btn.getAttribute('data-type');
-      updateLeaderboard();
-    });
-  });
-
-  // ========== Skill Card — Equip on Click ==========
-  var LEVEL_COSTS = [5, 15, 30, 50, 80];
-
-  document.querySelectorAll('.skill-card').forEach(function(card) {
-    card.addEventListener('click', function(e) {
-      if (e.target.closest('.skill-lvl-btn')) return;
-      var panel = card.closest('.skill-panel');
-      if (!panel) return;
-      var skillId = card.getAttribute('data-skill');
-      var type = card.getAttribute('data-type');
-      if (!skillId || !type) return;
-
-      panel.querySelectorAll('.skill-card').forEach(function(c) {
-        c.classList.remove('equipped');
-        var badge = c.querySelector('.equipped-badge');
-        if (badge) badge.remove();
-      });
-      card.classList.add('equipped');
-      var nameEl = card.querySelector('.skill-name');
-      if (nameEl && !card.querySelector('.equipped-badge')) {
-        var badge = document.createElement('span');
-        badge.className = 'equipped-badge';
-        badge.textContent = 'Equipped';
-        card.querySelector('.skill-top').appendChild(badge);
-      }
-
-      apiPost('/api/skills/equip', { skillId: skillId, category: type }).then(function(res) {
-        if (res.error) { console.error('Equip failed:', res.error); return; }
-        if (currentUser) {
-          if (type === 'solo') { currentUser.user.soloSkill = skillId; currentUser.user.soloSkillLevel = res.level; }
-          if (type === 'double') { currentUser.user.doubleSkill = skillId; currentUser.user.doubleSkillLevel = res.level; }
-          if (type === 'group') { currentUser.user.groupSkill = skillId; currentUser.user.groupSkillLevel = res.level; }
-        }
-        updateProfileSkills();
-      }).catch(function(err) { console.error('Equip error:', err); });
-    });
-  });
-
-  // ========== Skill Level Up ==========
-  document.querySelectorAll('.skill-lvl-btn').forEach(function(btn) {
-    btn.addEventListener('click', function(e) {
-      e.stopPropagation();
-      var card = btn.closest('.skill-card');
-      if (!card) return;
-      var skillId = card.getAttribute('data-skill');
-      var type = card.getAttribute('data-type');
-      if (!skillId || !type) return;
-
-      btn.disabled = true;
-      btn.textContent = '...';
-
-      apiPost('/api/skills/levelup', { skillId: skillId, category: type }).then(function(res) {
-        if (res.error) {
-          console.error('Level up failed:', res.error);
-          btn.disabled = false;
-          btn.textContent = res.error === 'Not enough SP' ? 'Need SP' : 'Error';
-          setTimeout(function() { restoreLevelBtn(btn, card); }, 1500);
-          return;
-        }
-
-        var spEl = document.getElementById('sp-amount');
-        if (spEl) spEl.textContent = Math.floor(res.spRemaining);
-        if (currentUser) currentUser.user.skillPoints = res.spRemaining;
-
-        var levelBar = card.querySelector('.skill-level-bar');
-        if (levelBar) {
-          var pips = levelBar.querySelectorAll('.skill-level-pip');
-          var filledCount = 0;
-          pips.forEach(function(pip) { if (pip.classList.contains('filled')) filledCount++; });
-          if (filledCount < pips.length) {
-            pips[filledCount].classList.add('filled');
-            if (type === 'double' || type === 'group') pips[filledCount].classList.add('amber');
-          }
-          var levelLabel = levelBar.querySelector('.skill-level-label');
-          if (levelLabel) levelLabel.textContent = 'Lv ' + res.newLevel;
-        }
-
-        card.setAttribute('data-level', res.newLevel);
-        if (res.nextCost === null) {
-          btn.textContent = 'MAX';
-          btn.disabled = true;
-        } else {
-          btn.textContent = '\u2B06 ' + res.nextCost + ' SP';
-          btn.setAttribute('data-cost', res.nextCost);
-          btn.disabled = false;
-        }
-        updateProfileSkills();
-      }).catch(function(err) {
-        console.error('Level up error:', err);
-        btn.disabled = false;
-        restoreLevelBtn(btn, card);
-      });
-    });
-  });
-
-  function restoreLevelBtn(btn, card) {
-    var level = parseInt(card.getAttribute('data-level') || '0', 10);
-    if (level >= 5) { btn.textContent = 'MAX'; btn.disabled = true; }
-    else { var cost = LEVEL_COSTS[level] || 5; btn.textContent = '\u2B06 ' + cost + ' SP'; btn.setAttribute('data-cost', cost); }
-  }
-
-  // ========== Collapsible Sections ==========
-  document.querySelectorAll('.section-header.collapsible').forEach(function(header) {
-    header.addEventListener('click', function() {
-      var targetId = header.getAttribute('data-collapse');
-      var body = document.getElementById(targetId);
-      if (!body) return;
-      if (header.classList.contains('collapsed')) {
-        header.classList.remove('collapsed');
-        body.style.display = 'block';
-      } else {
-        header.classList.add('collapsed');
-        body.style.display = 'none';
-      }
-    });
-  });
-
-  // ========== Modal Helpers ==========
+  // ========== Modals ==========
   function openModal(id) { var m = document.getElementById(id); if (m) m.style.display = 'flex'; }
   function closeModal(id) { var m = document.getElementById(id); if (m) m.style.display = 'none'; }
-
   document.querySelectorAll('[data-close]').forEach(function(btn) {
     btn.addEventListener('click', function() { closeModal(btn.getAttribute('data-close')); });
   });
-  document.querySelectorAll('.group-modal').forEach(function(modal) {
+  document.querySelectorAll('.modal-overlay').forEach(function(modal) {
     modal.addEventListener('click', function(e) { if (e.target === modal) modal.style.display = 'none'; });
   });
 
-  // ========== Management Buttons ==========
+  // ========== Skills Page ==========
+  function renderSkills() {
+    var list = document.getElementById('skill-list');
+    if (!list || !currentUser) return;
+    var u = currentUser.user;
+    var skills = ['wide-scan', 'strike-force', 'shield', 'trailblazer', 'ghost-run'];
+    var html = '';
+    skills.forEach(function(id) {
+      var level = u.skills[id] || 0;
+      var isEquipped = u.equippedSkill === id;
+      var pips = '';
+      for (var i = 0; i < 5; i++) {
+        pips += '<div class="skill-level-pip' + (i < level ? ' filled' : '') + '"></div>';
+      }
+      var costHtml = '';
+      if (level >= 5) costHtml = '<span class="skill-max">MAX</span>';
+      else costHtml = '<button class="skill-upgrade-btn" data-skill="' + id + '" data-cost="' + LEVEL_COSTS[level] + '">\\u2B06 ' + LEVEL_COSTS[level] + ' RP</button>';
+
+      // Current stat line
+      var stats = SKILL_STATS[id];
+      var currentVal = stats.values[level] || '—';
+      var currentBonus = stats.bonus[level] || '';
+      var statHtml = '<div class="skill-stat-current"><span class="stat-label">' + stats.label + ':</span> <span class="stat-value">' + currentVal + stats.unit + '</span>';
+      if (currentBonus) statHtml += ' <span class="stat-bonus">(' + currentBonus + ')</span>';
+      statHtml += '</div>';
+
+      // Next level preview
+      var nextHtml = '';
+      if (level < 5) {
+        var nextVal = stats.values[level + 1] || '—';
+        var nextBonus = stats.bonus[level + 1] || '';
+        nextHtml = '<div class="skill-stat-next"><span class="stat-next-label">Next (Lv ' + (level + 1) + '):</span> <span class="stat-next-value">' + nextVal + stats.unit + '</span>';
+        if (nextBonus) nextHtml += ' <span class="stat-bonus">(' + nextBonus + ')</span>';
+        nextHtml += '</div>';
+      }
+
+      html += '<div class="skill-card' + (isEquipped ? ' equipped' : '') + '" data-skill="' + id + '">'
+        + '<div class="skill-top">'
+        + '<div class="skill-icon">' + (SKILL_ICONS[id] || '') + '</div>'
+        + '<div class="skill-info"><div class="skill-name">' + SKILL_NAMES[id] + '</div>'
+        + '<div class="skill-desc">' + SKILL_DESCS[id] + '</div></div>'
+        + (isEquipped ? '<span class="equipped-badge">Equipped</span>' : '')
+        + '</div>'
+        + '<div class="skill-stats">' + statHtml + nextHtml + '</div>'
+        + '<div class="skill-bottom">'
+        + '<div class="skill-level-bar">' + pips + '<span class="skill-level-label">Lv ' + level + '</span></div>'
+        + '<div class="skill-actions">' + costHtml + '</div>'
+        + '</div></div>';
+    });
+    list.innerHTML = html;
+
+    // Equip on card click
+    list.querySelectorAll('.skill-card').forEach(function(card) {
+      card.addEventListener('click', function(e) {
+        if (e.target.closest('.skill-upgrade-btn')) return;
+        var skillId = card.getAttribute('data-skill');
+        apiPost('/api/skills/equip', { skillId: skillId }).then(function(res) {
+          if (res.error) return;
+          currentUser.user.equippedSkill = skillId;
+          renderSkills();
+          updateProfile();
+        });
+      });
+    });
+
+    // Upgrade on button click
+    list.querySelectorAll('.skill-upgrade-btn').forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var skillId = btn.getAttribute('data-skill');
+        btn.disabled = true;
+        btn.textContent = '...';
+        apiPost('/api/skills/upgrade', { skillId: skillId }).then(function(res) {
+          if (res.error) {
+            btn.textContent = res.error === 'Not enough RP' ? 'Need RP' : 'Error';
+            btn.disabled = false;
+            setTimeout(function() { renderSkills(); }, 1200);
+            return;
+          }
+          currentUser.user.skills[skillId] = res.newLevel;
+          currentUser.user.rpAvailable = res.rpAvailable;
+          currentUser.user.rpSpent = (currentUser.user.rpLifetime || 0) - res.rpAvailable;
+          var rpEl = document.getElementById('rp-available');
+          if (rpEl) rpEl.textContent = Math.floor(res.rpAvailable);
+          renderSkills();
+          updateProfile();
+        });
+      });
+    });
+  }
+
+  // ========== Group Page ==========
+  function loadGroupData() {
+    apiGet('/api/group').then(function(data) {
+      var noGroup = document.getElementById('no-group');
+      var hasGroup = document.getElementById('has-group');
+      if (!data.group) {
+        if (noGroup) noGroup.style.display = 'block';
+        if (hasGroup) hasGroup.style.display = 'none';
+        return;
+      }
+      if (noGroup) noGroup.style.display = 'none';
+      if (hasGroup) hasGroup.style.display = 'block';
+      var g = data.group;
+      var dot = document.getElementById('group-color-dot');
+      if (dot) dot.style.background = g.color;
+      var nameEl = document.getElementById('group-name');
+      if (nameEl) nameEl.textContent = g.name;
+      var metaEl = document.getElementById('group-meta');
+      if (metaEl) metaEl.textContent = data.members.length + ' of 15 members';
+      var cellsEl = document.getElementById('group-cells');
+      if (cellsEl) cellsEl.textContent = g.cellsOwned;
+      var membCountEl = document.getElementById('group-members-count');
+      if (membCountEl) membCountEl.textContent = data.members.length;
+      var codeEl = document.getElementById('invite-code-value');
+      if (codeEl) codeEl.textContent = g.inviteCode;
+      var grpColorPicker = document.getElementById('group-color-picker');
+      if (grpColorPicker) grpColorPicker.value = g.color;
+
+      // Show delete button only for owner
+      var deleteBtn = document.getElementById('mgmt-delete-btn');
+      if (deleteBtn) deleteBtn.style.display = (currentUser && currentUser.user.id === g.ownerId) ? '' : 'none';
+
+      // Render members
+      var memberList = document.getElementById('member-list');
+      if (memberList) {
+        var html = '';
+        data.members.forEach(function(m) {
+          var skillName = m.equippedSkill ? SKILL_NAMES[m.equippedSkill] || m.equippedSkill : 'None';
+          var skillIcon = m.equippedSkill ? (SKILL_ICONS[m.equippedSkill] || '') : '';
+          html += '<div class="member-row">'
+            + '<div class="member-avatar" style="border-color:' + m.color + '">' + (m.displayName || '?').charAt(0) + '</div>'
+            + '<div class="member-info">'
+            + '<div class="member-name">' + m.displayName + (m.id === g.ownerId ? ' <span class="member-role">Owner</span>' : '') + '</div>'
+            + '<div class="member-detail">' + skillIcon + ' ' + skillName + '</div>'
+            + '</div>'
+            + '<div class="member-rp">' + m.rpLifetime + ' RP</div>'
+            + '</div>';
+        });
+        memberList.innerHTML = html;
+      }
+    });
+  }
+
+  // Group management buttons
   var inviteBtn = document.getElementById('mgmt-invite-btn');
   if (inviteBtn) inviteBtn.addEventListener('click', function() { openModal('invite-modal'); });
-  var requestsBtn = document.getElementById('mgmt-requests-btn');
-  if (requestsBtn) requestsBtn.addEventListener('click', function() { openModal('requests-modal'); });
   var leaveBtn = document.getElementById('mgmt-leave-btn');
   if (leaveBtn) leaveBtn.addEventListener('click', function() { openModal('leave-modal'); });
 
   var copyBtn = document.getElementById('invite-copy-btn');
-  if (copyBtn) {
-    copyBtn.addEventListener('click', function() {
-      var code = document.getElementById('invite-code-value');
-      if (code && navigator.clipboard) {
-        navigator.clipboard.writeText(code.textContent).then(function() {
-          copyBtn.textContent = 'Copied!';
-          setTimeout(function() { copyBtn.textContent = 'Copy Code'; }, 1500);
-        });
-      }
-    });
-  }
-
-  var shareBtn = document.getElementById('invite-share-btn');
-  if (shareBtn) {
-    shareBtn.addEventListener('click', function() {
-      if (navigator.share) {
-        navigator.share({ title: 'Join on Turf', text: 'Use invite code to join!', url: window.location.origin });
-      } else {
-        shareBtn.textContent = 'Link copied!';
-        if (navigator.clipboard) navigator.clipboard.writeText(window.location.origin);
-        setTimeout(function() { shareBtn.textContent = 'Share Invite Link'; }, 1500);
-      }
-    });
-  }
-
-  document.querySelectorAll('.jr-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var item = btn.closest('.join-request-item');
-      if (!item) return;
-      var name = item.querySelector('.jr-name');
-      if (btn.classList.contains('accept')) {
-        item.innerHTML = '<div style="padding:8px 0;color:var(--green);font-size:12px;font-weight:600">' + (name ? name.textContent : 'Player') + ' accepted</div>';
-      } else {
-        item.innerHTML = '<div style="padding:8px 0;color:var(--text-muted);font-size:12px">' + (name ? name.textContent : 'Player') + ' denied</div>';
-      }
-    });
+  if (copyBtn) copyBtn.addEventListener('click', function() {
+    var code = document.getElementById('invite-code-value');
+    if (code && navigator.clipboard) {
+      navigator.clipboard.writeText(code.textContent).then(function() {
+        copyBtn.textContent = 'Copied!';
+        setTimeout(function() { copyBtn.textContent = 'Copy Code'; }, 1500);
+      });
+    }
   });
 
   var leaveConfirmBtn = document.getElementById('leave-confirm-btn');
-  if (leaveConfirmBtn) {
-    leaveConfirmBtn.addEventListener('click', function() {
-      leaveConfirmBtn.textContent = 'Leaving...';
-      leaveConfirmBtn.disabled = true;
-      setTimeout(function() { closeModal('leave-modal'); leaveConfirmBtn.textContent = 'Leave Group'; leaveConfirmBtn.disabled = false; }, 1200);
+  if (leaveConfirmBtn) leaveConfirmBtn.addEventListener('click', function() {
+    leaveConfirmBtn.disabled = true;
+    leaveConfirmBtn.textContent = 'Leaving...';
+    apiPost('/api/group/leave', {}).then(function(res) {
+      closeModal('leave-modal');
+      leaveConfirmBtn.disabled = false;
+      leaveConfirmBtn.textContent = 'Leave Group';
+      loadUserData().then(function() { loadGroupData(); renderSkills(); loadTerritory().then(function() { renderHexGrid(); updateMapOverlayStats(); }); });
+    });
+  });
+
+  // Delete group (owner only)
+  var deleteGroupBtn = document.getElementById('mgmt-delete-btn');
+  if (deleteGroupBtn) deleteGroupBtn.addEventListener('click', function() { openModal('delete-group-modal'); });
+  var deleteGroupConfirm = document.getElementById('delete-group-confirm-btn');
+  if (deleteGroupConfirm) deleteGroupConfirm.addEventListener('click', function() {
+    deleteGroupConfirm.disabled = true;
+    deleteGroupConfirm.textContent = 'Deleting...';
+    apiPost('/api/group/delete', {}).then(function(res) {
+      closeModal('delete-group-modal');
+      deleteGroupConfirm.disabled = false;
+      deleteGroupConfirm.textContent = 'Delete Forever';
+      if (res.error) { alert(res.error); return; }
+      loadUserData().then(function() { loadGroupData(); renderSkills(); loadTerritory().then(function() { renderHexGrid(); }); });
+    });
+  });
+
+  // Create group
+  var createGroupBtn = document.getElementById('create-group-btn');
+  if (createGroupBtn) createGroupBtn.addEventListener('click', function() { openModal('create-group-modal'); });
+  var createGroupConfirm = document.getElementById('create-group-confirm');
+  if (createGroupConfirm) createGroupConfirm.addEventListener('click', function() {
+    var nameInput = document.getElementById('new-group-name');
+    var errorEl = document.getElementById('create-group-error');
+    var name = nameInput ? nameInput.value.trim() : '';
+    if (!name) { if (errorEl) errorEl.textContent = 'Enter a name'; return; }
+    createGroupConfirm.disabled = true;
+    apiPost('/api/group/create', { name: name }).then(function(res) {
+      createGroupConfirm.disabled = false;
+      if (res.error) { if (errorEl) errorEl.textContent = res.error; return; }
+      closeModal('create-group-modal');
+      loadUserData().then(function() { loadGroupData(); loadTerritory().then(function() { renderHexGrid(); updateMapOverlayStats(); }); });
+    });
+  });
+
+  // Join group
+  var joinGroupBtn = document.getElementById('join-group-btn');
+  if (joinGroupBtn) joinGroupBtn.addEventListener('click', function() { openModal('join-group-modal'); });
+  var joinGroupConfirm = document.getElementById('join-group-confirm');
+  if (joinGroupConfirm) joinGroupConfirm.addEventListener('click', function() {
+    var codeInput = document.getElementById('join-invite-code');
+    var errorEl = document.getElementById('join-group-error');
+    var code = codeInput ? codeInput.value.trim() : '';
+    if (!code) { if (errorEl) errorEl.textContent = 'Enter a code'; return; }
+    joinGroupConfirm.disabled = true;
+    apiPost('/api/group/join', { inviteCode: code }).then(function(res) {
+      joinGroupConfirm.disabled = false;
+      if (res.error) { if (errorEl) errorEl.textContent = res.error; return; }
+      closeModal('join-group-modal');
+      loadUserData().then(function() { loadGroupData(); loadTerritory().then(function() { renderHexGrid(); updateMapOverlayStats(); }); });
+    });
+  });
+
+  // ========== Leaderboard ==========
+  function loadLeaderboard() {
+    apiGet('/api/leaderboard').then(function(data) {
+      var list = document.getElementById('lb-list');
+      if (!list || !data.leaderboard) return;
+      var userEntityId = currentUser ? (currentUser.user.groupId || currentUser.user.id) : null;
+      var html = '';
+      data.leaderboard.forEach(function(entry, idx) {
+        var isYou = entry.entityId === userEntityId;
+        html += '<div class="lb-row' + (isYou ? ' highlight' : '') + '">'
+          + '<div class="lb-rank">' + (idx + 1) + '</div>'
+          + '<div class="lb-color" style="background:' + entry.color + '"></div>'
+          + '<div class="lb-info"><div class="lb-name">' + entry.name + '</div>'
+          + '<div class="lb-type">' + entry.type + '</div></div>'
+          + '<div class="lb-score">' + entry.cellsOwned + ' <span class="lb-unit">cells</span></div>'
+          + '</div>';
+      });
+      if (!data.leaderboard.length) html = '<div class="empty-state"><p>No territory claimed yet.</p></div>';
+      list.innerHTML = html;
     });
   }
 
-  // ========== Raid Map Overlay ==========
-  var raidMap = null;
-  var raidHexLayer = null;
-  var raidSelectedCells = [];
-  var raidMaxCells = 5;
-  var raidOverlay = null;
-
-  function openRaidMap() {
-    raidOverlay = document.getElementById('raid-map-overlay');
-    if (!raidOverlay) return;
-    raidOverlay.style.display = 'flex';
-    raidSelectedCells = [];
-    updateRaidCount();
-    if (!raidMap) {
-      raidMap = L.map('raid-map', { zoomControl: false, attributionControl: false, minZoom: 13, maxZoom: 18 });
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd' }).addTo(raidMap);
-      raidHexLayer = L.layerGroup().addTo(raidMap);
-    }
-    var saved = null;
-    try { saved = JSON.parse(localStorage.getItem('turfHomeLocation')); } catch(e) {}
-    var lat = (saved && saved.lat) ? saved.lat : (userLat || 39.8);
-    var lng = (saved && saved.lng) ? saved.lng : (userLng || -98.5);
-    raidMap.setView([lat, lng], 15);
-    setTimeout(function() { raidMap.invalidateSize(); renderRaidHexes(); }, 100);
-    raidMap.on('moveend', renderRaidHexes);
-    raidMap.on('zoomend', renderRaidHexes);
+  // ========== Profile ==========
+  function updateProfile() {
+    if (!currentUser) return;
+    var u = currentUser.user;
+    var nameEl = document.getElementById('profile-name');
+    if (nameEl) nameEl.textContent = u.displayName;
+    var groupEl = document.getElementById('profile-group');
+    if (groupEl) groupEl.textContent = currentUser.group ? currentUser.group.name : 'Solo Player';
+    var eqIcon = document.getElementById('eq-icon');
+    var eqName = document.getElementById('eq-name');
+    var eqLevel = document.getElementById('eq-level');
+    if (eqIcon) eqIcon.textContent = u.equippedSkill ? (SKILL_ICONS[u.equippedSkill] || '') : '\\u2014';
+    if (eqName) eqName.textContent = u.equippedSkill ? (SKILL_NAMES[u.equippedSkill] || u.equippedSkill) : 'None';
+    if (eqLevel) eqLevel.textContent = u.equippedSkill ? 'Level ' + (u.skills[u.equippedSkill] || 0) : '';
+    var lifetimeEl = document.getElementById('stat-lifetime-rp');
+    if (lifetimeEl) lifetimeEl.textContent = u.rpLifetime;
+    var availableEl = document.getElementById('stat-available-rp');
+    if (availableEl) availableEl.textContent = Math.floor(u.rpAvailable);
+    var colorEl = document.getElementById('settings-color');
+    if (colorEl) colorEl.textContent = u.color;
+    var colorPicker = document.getElementById('user-color-picker');
+    if (colorPicker) colorPicker.value = u.color;
   }
 
-  function closeRaidMap() {
-    if (raidOverlay) raidOverlay.style.display = 'none';
-    if (raidMap) { raidMap.off('moveend', renderRaidHexes); raidMap.off('zoomend', renderRaidHexes); }
-    raidSelectedCells = [];
-  }
-
-  function updateRaidCount() {
-    var countEl = document.getElementById('raid-hex-count');
-    var confirmBtn = document.getElementById('raid-confirm-btn');
-    if (countEl) countEl.textContent = raidSelectedCells.length;
-    if (confirmBtn) confirmBtn.disabled = raidSelectedCells.length === 0;
-  }
-
-  function toggleRaidCell(cell) {
-    var idx = raidSelectedCells.indexOf(cell);
-    if (idx >= 0) raidSelectedCells.splice(idx, 1);
-    else if (raidSelectedCells.length < raidMaxCells) raidSelectedCells.push(cell);
-    updateRaidCount();
-    renderRaidHexes();
-  }
-
-  function renderRaidHexes() {
-    if (!raidMap || !raidHexLayer || typeof h3 === 'undefined') return;
-    raidHexLayer.clearLayers();
-    var center = raidMap.getCenter();
-    var zoom = raidMap.getZoom();
-    var renderK = zoom >= 16 ? 6 : zoom >= 15 ? 8 : zoom >= 14 ? 12 : 16;
-    var viewCell = h3.geoToH3(center.lat, center.lng, H3_RES);
-    var visibleCells = h3.kRing(viewCell, renderK);
-    var bounds = raidMap.getBounds();
-
-    visibleCells.forEach(function(cell) {
-      var cellCenter = h3.h3ToGeo(cell);
-      if (cellCenter[0] < bounds.getSouth() - 0.005 || cellCenter[0] > bounds.getNorth() + 0.005 ||
-          cellCenter[1] < bounds.getWest() - 0.005 || cellCenter[1] > bounds.getEast() + 0.005) return;
-      var data = getCellData(cell);
-      if (!data) return;
-      var boundary = h3.h3ToGeoBoundary(cell);
-      var isSelected = raidSelectedCells.indexOf(cell) >= 0;
-
-      if (data.owner === 'enemy') {
-        var poly = L.polygon(boundary, {
-          color: isSelected ? '#ef4444' : '#ff6a00', fillColor: isSelected ? '#ef4444' : '#ff6a00',
-          fillOpacity: isSelected ? 0.5 : 0.15, weight: isSelected ? 2.5 : 1, opacity: isSelected ? 1 : 0.5
-        }).addTo(raidHexLayer);
-        poly.on('click', function() { toggleRaidCell(cell); });
-        if (zoom >= 15) {
-          var labelHtml = '<div style="text-align:center;text-shadow:0 0 4px #000;pointer-events:none">'
-            + '<div style="font-size:13px;font-weight:700;color:' + (isSelected ? '#ef4444' : '#ff6a00') + '">\uD83D\uDEE1\uFE0F ' + data.defense + '</div>'
-            + (isSelected ? '<div style="font-size:10px;color:#ef4444;font-weight:700">TARGET</div>' : '') + '</div>';
-          L.marker(cellCenter, { icon: L.divIcon({ className: '', html: labelHtml, iconSize: [60, 36], iconAnchor: [30, 18] }), interactive: false }).addTo(raidHexLayer);
-        }
-      } else if (data.owner === 'you') {
-        L.polygon(boundary, { color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.15, weight: 0.8, opacity: 0.4 }).addTo(raidHexLayer);
-      } else {
-        L.polygon(boundary, { color: '#ffffff', fillColor: 'transparent', fillOpacity: 0, weight: 0.3, opacity: 0.08 }).addTo(raidHexLayer);
-      }
+  function loadRuns() {
+    apiGet('/api/runs').then(function(data) {
+      var container = document.getElementById('run-history');
+      if (!container || !data.runs) return;
+      var runsEl = document.getElementById('stat-total-runs');
+      if (runsEl) runsEl.textContent = data.runs.length;
+      var html = '';
+      data.runs.forEach(function(r) {
+        var date = new Date(r.createdAt + 'Z');
+        var ago = timeAgo(date);
+        html += '<div class="run-entry">'
+          + '<div class="run-info"><div class="run-detail">' + r.cellsCount + ' cells · ' + ago + '</div></div>'
+          + '<div class="run-rp">+' + r.rpEarned + ' RP</div>'
+          + '</div>';
+      });
+      if (!data.runs.length) html = '<div class="empty-state"><p>No runs yet. Go claim some turf!</p></div>';
+      container.innerHTML = html;
     });
   }
 
-  var proposeBtn = document.getElementById('propose-raid-btn');
-  if (proposeBtn) proposeBtn.addEventListener('click', function() { openRaidMap(); });
-  var raidCancelBtn = document.getElementById('raid-cancel-btn');
-  if (raidCancelBtn) raidCancelBtn.addEventListener('click', function() { closeRaidMap(); });
-  var raidConfirmBtn = document.getElementById('raid-confirm-btn');
-  if (raidConfirmBtn) {
-    raidConfirmBtn.addEventListener('click', function() {
-      if (raidSelectedCells.length === 0) return;
-      raidConfirmBtn.textContent = 'Raid Proposed!';
-      raidConfirmBtn.disabled = true;
-      setTimeout(function() { closeRaidMap(); raidConfirmBtn.textContent = 'Propose Raid'; }, 1200);
-    });
+  function timeAgo(date) {
+    var diff = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    return Math.floor(diff / 86400) + 'd ago';
   }
 
-  // ========== ADD RUN MAP OVERLAY ==========
+  // ========== Add Run Overlay ==========
   var runMap = null;
   var runHexLayer = null;
   var runSelectedCells = [];
   var runOverlay = null;
-  var runType = 'solo';
+  var userLat = null;
+  var userLng = null;
 
   function openRunMap() {
     runOverlay = document.getElementById('run-map-overlay');
     if (!runOverlay) return;
     runOverlay.style.display = 'flex';
     runSelectedCells = [];
-    runType = 'solo';
     updateRunInfo();
-    document.querySelectorAll('.run-type-btn').forEach(function(b) { b.classList.remove('active'); });
-    var defaultBtn = document.querySelector('.run-type-btn[data-run-type="solo"]');
-    if (defaultBtn) defaultBtn.classList.add('active');
-
     if (!runMap) {
       runMap = L.map('run-map', { zoomControl: false, attributionControl: false, minZoom: 13, maxZoom: 18 });
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd' }).addTo(runMap);
@@ -438,22 +467,18 @@
       var cellCenter = h3.h3ToGeo(cell);
       if (cellCenter[0] < bounds.getSouth() - 0.005 || cellCenter[0] > bounds.getNorth() + 0.005 ||
           cellCenter[1] < bounds.getWest() - 0.005 || cellCenter[1] > bounds.getEast() + 0.005) return;
-
       var boundary = h3.h3ToGeoBoundary(cell);
       var isSelected = runSelectedCells.indexOf(cell) >= 0;
-
       var data = getCellData(cell);
       var baseColor = '#ffffff';
       var baseOpacity = 0.06;
       if (data && data.owner === 'you') { baseColor = '#4ade80'; baseOpacity = 0.15; }
-      else if (data && data.owner === 'enemy') { baseColor = '#ff6a00'; baseOpacity = 0.15; }
-
+      else if (data && data.owner === 'enemy') { baseColor = data.ownerColor || '#ff6a00'; baseOpacity = 0.15; }
       var poly = L.polygon(boundary, {
         color: isSelected ? '#ff6a00' : baseColor, fillColor: isSelected ? '#ff6a00' : baseColor,
         fillOpacity: isSelected ? 0.45 : baseOpacity, weight: isSelected ? 2.5 : 0.5, opacity: isSelected ? 1 : 0.3
       }).addTo(runHexLayer);
       poly.on('click', function() { toggleRunCell(cell); });
-
       if (isSelected && zoom >= 15) {
         var order = runSelectedCells.indexOf(cell) + 1;
         var labelHtml = '<div style="text-align:center;pointer-events:none;text-shadow:0 0 4px #000">'
@@ -463,21 +488,9 @@
     });
   }
 
-  // Run type buttons
-  document.querySelectorAll('.run-type-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      document.querySelectorAll('.run-type-btn').forEach(function(b) { b.classList.remove('active'); });
-      btn.classList.add('active');
-      runType = btn.getAttribute('data-run-type') || 'solo';
-    });
-  });
-
-  // Add Runs button
-  var addRunBtn = document.querySelector('.quick-btn.primary');
-  if (addRunBtn) {
-    addRunBtn.addEventListener('click', function(e) { e.stopPropagation(); openRunMap(); });
-  }
-
+  // Add Run button
+  var addRunBtn = document.getElementById('add-run-btn');
+  if (addRunBtn) addRunBtn.addEventListener('click', function(e) { e.stopPropagation(); openRunMap(); });
   var runCancelBtn = document.getElementById('run-cancel-btn');
   if (runCancelBtn) runCancelBtn.addEventListener('click', function() { closeRunMap(); });
 
@@ -488,52 +501,39 @@
       runSubmitBtn.textContent = 'Submitting...';
       runSubmitBtn.disabled = true;
 
-      // Compute fog reveal cells based on active skill (Wide Scan / Recon Sweep)
+      // Compute fog reveal from Wide Scan
       var revealedCells = [];
       if (typeof h3 !== 'undefined' && currentUser) {
         var u = currentUser.user;
-        var skill = null;
-        var skillLevel = 0;
-        if (runType === 'solo') { skill = u.soloSkill; skillLevel = u.soloSkillLevel; }
-        else if (runType === 'double') { skill = u.doubleSkill; skillLevel = u.doubleSkillLevel; }
-        else if (runType === 'group') { skill = u.groupSkill; skillLevel = u.groupSkillLevel; }
-
         var revealRings = 0;
-        if (skill === 'wide-scan' && skillLevel > 0) {
-          // Lv1: 1 ring, Lv2: 1 ring + 25% 2nd, Lv3: 2 rings, Lv4: 2 + 25% 3rd, Lv5: 3 rings
-          revealRings = [0, 1, 1, 2, 2, 3][skillLevel] || 0;
-          var extraChance = [0, 0, 0.25, 0, 0.25, 0][skillLevel] || 0;
-          if (extraChance > 0 && Math.random() < extraChance) revealRings++;
-        } else if (skill === 'recon-sweep' && skillLevel > 0) {
-          // Lv1: 1 ring, Lv2: 1 ring + overlap, Lv3: 2 rings, Lv4: 2 + overlap, Lv5: 2 rings (4 combined)
-          revealRings = [0, 1, 1, 2, 2, 2][skillLevel] || 0;
+        if (u.equippedSkill === 'wide-scan') {
+          var lvl = u.skills['wide-scan'] || 0;
+          revealRings = [0, 1, 1, 2, 2, 3][lvl] || 0;
+          var extra = [0, 0, 0.25, 0, 0.25, 0][lvl] || 0;
+          if (extra > 0 && Math.random() < extra) revealRings++;
         }
-
         if (revealRings > 0) {
           var revealSet = {};
           runSelectedCells.forEach(function(cell) {
-            var ring = h3.kRing(cell, revealRings);
-            ring.forEach(function(c) { revealSet[c] = true; });
+            h3.kRing(cell, revealRings).forEach(function(c) { revealSet[c] = true; });
           });
           revealedCells = Object.keys(revealSet);
         }
       }
 
-      // Always reveal the cells ran through + any skill-based reveals
       var allRevealed = runSelectedCells.slice();
       revealedCells.forEach(function(c) { if (allRevealed.indexOf(c) < 0) allRevealed.push(c); });
 
-      apiPost('/api/runs', { cells: runSelectedCells, runType: runType, revealedCells: allRevealed }).then(function(res) {
+      apiPost('/api/runs', { cells: runSelectedCells, revealedCells: allRevealed }).then(function(res) {
         closeRunMap();
         runSubmitBtn.textContent = 'Submit Run';
         runSubmitBtn.disabled = false;
         if (res.error) { alert('Run failed: ' + res.error); return; }
-
         showRunResult(res);
         loadTerritory().then(function() { if (turfMap) renderHexGrid(); });
         loadUserData();
       }).catch(function(err) {
-        console.error('Run submit error:', err);
+        console.error('Run error:', err);
         runSubmitBtn.textContent = 'Submit Run';
         runSubmitBtn.disabled = false;
         closeRunMap();
@@ -544,82 +544,44 @@
   function showRunResult(res) {
     var body = document.getElementById('run-result-body');
     if (!body) return;
-    var skillInfo = '';
-    if (res.activeSkill) {
-      skillInfo = '<div class="run-result-skill"><span class="rr-skill-icon">\u26A1</span><span>'
-        + res.activeSkill.replace(/-/g, ' ') + ' Lv' + res.activeSkillLevel + ' active (' + res.runType + ')</span></div>';
-    }
     body.innerHTML = '<div class="run-result-grid">'
-      + '<div class="run-result-stat"><div class="rr-value">' + res.cellsTraversed + '</div><div class="rr-label">Cells</div></div>'
+      + '<div class="run-result-stat"><div class="rr-value">' + res.cellsCount + '</div><div class="rr-label">Cells</div></div>'
       + '<div class="run-result-stat"><div class="rr-value green">' + res.cellsCaptured + '</div><div class="rr-label">Captured</div></div>'
-      + '<div class="run-result-stat"><div class="rr-value">' + res.pointsEarned.toFixed(1) + '</div><div class="rr-label">Points</div></div>'
-      + '<div class="run-result-stat"><div class="rr-value green">+' + res.spEarned.toFixed(1) + '</div><div class="rr-label">SP Earned</div></div>'
-      + '</div><div style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:4px">'
-      + res.distanceMiles.toFixed(1) + ' mi \u00B7 ' + res.runType + ' run</div>' + skillInfo;
+      + '<div class="run-result-stat"><div class="rr-value amber">+' + res.rpEarned + '</div><div class="rr-label">RP Earned</div></div>'
+      + '</div>';
     openModal('run-result-modal');
   }
 
-  // ========== PWA Install ==========
+  // ========== PWA ==========
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(function() {});
   }
 
-  // ========== TERRITORY MAP ==========
+  // ========== Territory Map ==========
   var turfMap = null;
   var hexLayer = null;
   var fogLayer = null;
-  var userLat = null;
-  var userLng = null;
-
-  function getHexStyle(cellData) {
-    if (!cellData) return null;
-    if (cellData.owner === 'you') {
-      if (cellData.defense >= 20) return { color: '#16a34a', fillColor: '#16a34a', fillOpacity: 0.4, weight: 1.5, opacity: 0.9 };
-      if (cellData.defense >= 10) return { color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.3, weight: 1.5, opacity: 0.8 };
-      return { color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.2, weight: 1.5, opacity: 0.7 };
-    }
-    if (cellData.owner === 'enemy') {
-      if (cellData.defense >= 20) return { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.35, weight: 1.5, opacity: 0.9 };
-      if (cellData.defense >= 10) return { color: '#ff6a00', fillColor: '#ff6a00', fillOpacity: 0.25, weight: 1.5, opacity: 0.8 };
-      return { color: '#ffb830', fillColor: '#ffb830', fillOpacity: 0.2, weight: 1.5, opacity: 0.7 };
-    }
-    return { color: '#ffffff', fillColor: '#ffffff', fillOpacity: 0.06, weight: 0.5, opacity: 0.2 };
-  }
 
   function getCellData(cell) {
     if (!territoryState) return null;
     if (!territoryState.explored.has(cell)) return null;
-
-    var cellPoints = territoryState.cells[cell];
-    if (!cellPoints) {
-      return { owner: 'neutral', ownerType: null, ownerName: null, ownerInitials: null, defense: 0, threat: 0 };
-    }
-
-    var userGroupId = currentUser ? currentUser.user.groupId : null;
-    var maxGroupId = null;
-    var maxPoints = 0;
-    for (var gid in cellPoints) {
-      if (cellPoints.hasOwnProperty(gid) && cellPoints[gid] > maxPoints) { maxGroupId = gid; maxPoints = cellPoints[gid]; }
-    }
-    if (!maxGroupId || maxPoints === 0) {
-      return { owner: 'neutral', ownerType: null, ownerName: null, ownerInitials: null, defense: 0, threat: 0 };
-    }
-
-    var isYours = maxGroupId === userGroupId;
+    var cp = territoryState.cells[cell];
+    if (!cp) return { owner: 'neutral', ownerColor: null, ownerName: null, ownerInitials: null, defense: 0, threat: 0 };
+    var userEid = territoryState.userEntityId;
+    var maxEid = null; var maxRp = 0;
+    for (var eid in cp) { if (cp[eid] > maxRp) { maxEid = eid; maxRp = cp[eid]; } }
+    if (!maxEid || maxRp === 0) return { owner: 'neutral', ownerColor: null, ownerName: null, ownerInitials: null, defense: 0, threat: 0 };
+    var isYours = maxEid === userEid;
     var threat = 0;
-    if (isYours) {
-      for (var gid2 in cellPoints) { if (gid2 !== userGroupId && cellPoints[gid2] > threat) threat = cellPoints[gid2]; }
-    } else {
-      threat = (userGroupId && cellPoints[userGroupId]) ? cellPoints[userGroupId] : 0;
-    }
-
-    var groupInfo = territoryState.groups[maxGroupId] || {};
+    if (isYours) { for (var e in cp) { if (e !== userEid && cp[e] > threat) threat = cp[e]; } }
+    else { threat = (userEid && cp[userEid]) ? cp[userEid] : 0; }
+    var info = territoryState.entities[maxEid] || {};
     return {
       owner: isYours ? 'you' : 'enemy',
-      ownerType: 'group',
-      ownerName: groupInfo.name || maxGroupId,
-      ownerInitials: groupInfo.tag || (groupInfo.name || maxGroupId).substring(0, 2).toUpperCase(),
-      defense: Math.round(maxPoints),
+      ownerColor: info.color || '#ff6a00',
+      ownerName: info.name || maxEid,
+      ownerInitials: (info.name || maxEid).substring(0, 2).toUpperCase(),
+      defense: Math.round(maxRp),
       threat: Math.round(threat)
     };
   }
@@ -628,61 +590,72 @@
     if (typeof L === 'undefined' || typeof h3 === 'undefined') return;
     turfMap = L.map('map', { zoomControl: false, attributionControl: false, minZoom: 13, maxZoom: 18 });
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd' }).addTo(turfMap);
-    hexLayer = L.layerGroup().addTo(turfMap);
     fogLayer = L.layerGroup().addTo(turfMap);
+    hexLayer = L.layerGroup().addTo(turfMap);
 
-    var saved = null;
-    try { saved = JSON.parse(localStorage.getItem('turfHomeLocation')); } catch(e) {}
-    if (saved && saved.lat && saved.lng) {
-      loadMapAt(saved.lat, saved.lng);
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(function(pos) {
-          userLat = pos.coords.latitude; userLng = pos.coords.longitude;
-          addUserMarker(userLat, userLng);
-        }, function() {}, { timeout: 5000, enableHighAccuracy: false });
-      }
-    } else if (navigator.geolocation) {
+    // Always try GPS first — go to user's current location
+    if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(function(pos) {
         userLat = pos.coords.latitude; userLng = pos.coords.longitude;
-        localStorage.setItem('turfHomeLocation', JSON.stringify({ lat: userLat, lng: userLng, name: 'My Location' }));
         loadMapAt(userLat, userLng);
         addUserMarker(userLat, userLng);
-      }, function() { showHomeCityPrompt(); }, { timeout: 8000, enableHighAccuracy: false });
+      }, function() {
+        // GPS failed — try saved home location, or prompt
+        var saved = null;
+        try { saved = JSON.parse(localStorage.getItem('turfHomeLocation')); } catch(e) {}
+        if (saved && saved.lat && saved.lng) {
+          loadMapAt(saved.lat, saved.lng);
+        } else {
+          showHomeCityPrompt();
+        }
+      }, { timeout: 8000, enableHighAccuracy: true });
     } else {
-      showHomeCityPrompt();
+      var saved = null;
+      try { saved = JSON.parse(localStorage.getItem('turfHomeLocation')); } catch(e) {}
+      if (saved && saved.lat && saved.lng) {
+        loadMapAt(saved.lat, saved.lng);
+      } else {
+        showHomeCityPrompt();
+      }
     }
     turfMap.on('moveend', renderHexGrid);
     turfMap.on('zoomend', renderHexGrid);
   }
 
+  function checkAndSeedTerritory() {
+    if (!turfMap || !territoryState || !isAuthenticated || typeof h3 === 'undefined') return;
+    var center = turfMap.getCenter();
+    var centerCell = h3.geoToH3(center.lat, center.lng, H3_RES);
+    var nearbyCells = h3.kRing(centerCell, 8);
+    var hasNearbyTerritory = nearbyCells.some(function(c) { return territoryState.cells[c]; });
+    if (!hasNearbyTerritory) seedTerritoryData(center.lat, center.lng);
+  }
+
   function loadMapAt(lat, lng) {
     turfMap.setView([lat, lng], DEFAULT_ZOOM);
+    hideMapLoading();
     loadTerritory().then(function() {
-      if (territoryState && territoryState.explored.size === 0) {
-        seedTerritoryData(lat, lng);
-      } else {
-        renderHexGrid();
-        updateMapOverlayStats();
-      }
+      renderHexGrid(); updateMapOverlayStats();
+      checkAndSeedTerritory();
     });
   }
 
   function showHomeCityPrompt() {
     turfMap.setView([39.8283, -98.5795], 4);
+    hideMapLoading();
     var overlay = document.getElementById('home-city-overlay');
     if (overlay) overlay.style.display = 'flex';
     var input = document.getElementById('home-city-input');
     var btn = document.getElementById('home-city-btn');
     var error = document.getElementById('home-city-error');
     if (input) {
-      input.addEventListener('keydown', function(e) { if (e.key === 'Enter') geocodeAndSetHome(); });
+      input.addEventListener('keydown', function(e) { if (e.key === 'Enter') geocode(); });
       setTimeout(function() { input.focus(); }, 300);
     }
-    if (btn) btn.addEventListener('click', geocodeAndSetHome);
-
-    function geocodeAndSetHome() {
+    if (btn) btn.addEventListener('click', geocode);
+    function geocode() {
       var query = input ? input.value.trim() : '';
-      if (!query) { if (error) error.textContent = 'Please enter a city or location'; return; }
+      if (!query) { if (error) error.textContent = 'Please enter a location'; return; }
       if (error) error.textContent = '';
       if (btn) { btn.textContent = 'Finding...'; btn.disabled = true; }
       fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(query), {
@@ -691,8 +664,7 @@
         if (data && data.length > 0) {
           var lat = parseFloat(data[0].lat);
           var lng = parseFloat(data[0].lon);
-          var name = data[0].display_name.split(',')[0];
-          localStorage.setItem('turfHomeLocation', JSON.stringify({ lat: lat, lng: lng, name: name }));
+          localStorage.setItem('turfHomeLocation', JSON.stringify({ lat: lat, lng: lng, name: data[0].display_name.split(',')[0] }));
           if (overlay) overlay.style.display = 'none';
           loadMapAt(lat, lng);
           addUserMarker(lat, lng);
@@ -707,62 +679,101 @@
     }
   }
 
+  var userMarkerRef = null;
   function addUserMarker(lat, lng) {
-    var markerHtml = '<div class="user-marker"><div class="user-marker-ring"></div></div>';
-    var icon = L.divIcon({ className: '', html: markerHtml, iconSize: [16, 16], iconAnchor: [8, 8] });
-    L.marker([lat, lng], { icon: icon, interactive: false }).addTo(turfMap);
+    if (userMarkerRef && turfMap) turfMap.removeLayer(userMarkerRef);
+    var html = '<div class="user-marker"><div class="user-marker-ring"></div></div>';
+    userMarkerRef = L.marker([lat, lng], { icon: L.divIcon({ className: '', html: html, iconSize: [16, 16], iconAnchor: [8, 8] }), interactive: false }).addTo(turfMap);
   }
 
-  // ========== Territory Data from API ==========
+  function hideMapLoading() {
+    var el = document.getElementById('map-loading');
+    if (el) { el.classList.add('hidden'); setTimeout(function() { el.style.display = 'none'; }, 300); }
+  }
+
+  // ========== Territory Data ==========
   function loadTerritory() {
     return apiGet('/api/territory').then(function(data) {
       if (data.error) { console.error('Territory error:', data.error); return; }
       territoryState = {
-        explored: new Set(data.explored || []),
+        explored: new Set(data.discovered || []),
         cells: data.cells || {},
-        groups: data.groups || {},
-        userGroupId: data.userGroupId
+        entities: data.entities || {},
+        userEntityId: data.userEntityId
       };
     }).catch(function(err) {
       console.error('Territory load error:', err);
-      territoryState = { explored: new Set(), cells: {}, groups: {}, userGroupId: null };
+      territoryState = { explored: new Set(), cells: {}, entities: {}, userEntityId: null };
     });
   }
 
   function seedTerritoryData(lat, lng) {
     if (typeof h3 === 'undefined') return;
     var centerCell = h3.geoToH3(lat, lng, H3_RES);
-    var allExplored = h3.kRing(centerCell, 5);
     var territory = [];
-    var explored = [];
 
-    allExplored.forEach(function(c) { explored.push({ cellId: c, groupId: 'grp-shadow' }); });
+    // NPC groups to seed territory with
+    var npcGroups = ['npc-ironclad', 'npc-phantom', 'npc-asphalt', 'npc-nightowl', 'npc-trailblaze', 'npc-concrete', 'npc-summit', 'npc-stealth'];
 
-    var ownedCells = h3.kRing(centerCell, 1);
-    var yourPts = [25, 18, 14, 8, 22, 5, 12];
-    var threatPts = [4, 8, 2, 6, 0, 3, 1];
-    ownedCells.forEach(function(c, i) {
-      territory.push({ cellId: c, groupId: 'grp-shadow', points: yourPts[i] || 10 });
-      if (threatPts[i] > 0) territory.push({ cellId: c, groupId: 'grp-pavement', points: threatPts[i] });
+    // Simple hash from lat/lng for deterministic NPC selection
+    function seedHash(n) { n = ((n >> 16) ^ n) * 0x45d9f3b; n = ((n >> 16) ^ n) * 0x45d9f3b; return ((n >> 16) ^ n) & 0x7fffffff; }
+    var areaHash = seedHash(Math.floor(lat * 1000) + Math.floor(lng * 1000) * 9973);
+
+    // Pick 3-5 NPC groups for this area
+    var activeNpcs = [];
+    for (var gi = 0; gi < 5; gi++) {
+      var pick = npcGroups[(areaHash + gi * 3) % npcGroups.length];
+      if (activeNpcs.indexOf(pick) < 0) activeNpcs.push(pick);
+    }
+    if (activeNpcs.length < 3) activeNpcs = npcGroups.slice(0, 3);
+
+    // Get a large ring of cells around the user's location
+    var allCells = h3.kRing(centerCell, 12);
+
+    // Create NPC cluster centers — offset from user, scattered around
+    var clusterCenters = [];
+    activeNpcs.forEach(function(npcId, idx) {
+      // Each NPC gets 2-3 cluster centers at varying distances
+      var numClusters = 2 + (seedHash(areaHash + idx * 17) % 2);
+      for (var cl = 0; cl < numClusters; cl++) {
+        // Pick a cell in outer rings (distance 4-11 from center)
+        var angle = ((idx * 2.1) + (cl * 1.4)) % 6.28;
+        var dist = 4 + ((seedHash(areaHash + idx * 7 + cl * 13) % 8));
+        // Approximate offset using lat/lng
+        var offsetLat = lat + (Math.cos(angle) * dist * 0.0012);
+        var offsetLng = lng + (Math.sin(angle) * dist * 0.0015);
+        var clusterCenter = h3.geoToH3(offsetLat, offsetLng, H3_RES);
+        clusterCenters.push({ npcId: npcId, center: clusterCenter, size: 1 + (seedHash(areaHash + idx + cl * 5) % 3) });
+      }
     });
 
-    var ring3 = h3.kRing(centerCell, 3);
-    var enemyCells = ring3.filter(function(c) { return ownedCells.indexOf(c) < 0; }).slice(0, 9);
-    var eGroups = ['grp-pavement','grp-pavement','grp-pavement','grp-night','grp-night','grp-night','grp-pavement','grp-night','grp-pavement'];
-    var ePts = [28, 15, 7, 21, 3, 11, 16, 9, 13];
-    var aAtk = [4, 8, 5, 2, 3, 0, 6, 1, 3];
-    enemyCells.forEach(function(c, i) {
-      territory.push({ cellId: c, groupId: eGroups[i] || 'grp-pavement', points: ePts[i] || 10 });
-      explored.push({ cellId: c, groupId: eGroups[i] || 'grp-pavement' });
-      if (aAtk[i] > 0) territory.push({ cellId: c, groupId: 'grp-shadow', points: aAtk[i] });
+    // Generate territory from cluster centers
+    var cellClaims = {};
+    clusterCenters.forEach(function(cc) {
+      var clusterCells = h3.kRing(cc.center, cc.size);
+      clusterCells.forEach(function(c) {
+        // Only claim cells within our overall area
+        if (allCells.indexOf(c) < 0) return;
+        // RP varies by position — inner cells stronger
+        var d = h3.h3Distance(cc.center, c);
+        if (d === null) d = cc.size;
+        var baseRp = 8 + (seedHash(parseInt(c.slice(-6), 16)) % 20);
+        var rp = Math.max(3, Math.round(baseRp * (1 - d * 0.2)));
+        if (!cellClaims[c]) cellClaims[c] = { entityId: cc.npcId, rp: rp };
+        else if (rp > cellClaims[c].rp) cellClaims[c] = { entityId: cc.npcId, rp: rp };
+      });
     });
 
-    apiPost('/api/seed-territory', { territory: territory, explored: explored }).then(function() {
+    // Convert to territory array
+    for (var cell in cellClaims) {
+      territory.push({ h3Index: cell, entityId: cellClaims[cell].entityId, rp: cellClaims[cell].rp });
+    }
+
+    if (territory.length === 0) return;
+
+    apiPost('/api/seed-territory', { territory: territory }).then(function() {
       return loadTerritory();
-    }).then(function() {
-      renderHexGrid();
-      updateMapOverlayStats();
-    }).catch(function(err) { console.error('Seed error:', err); });
+    }).then(function() { renderHexGrid(); updateMapOverlayStats(); }).catch(function(err) { console.error('Seed error:', err); });
   }
 
   // ========== Hex Grid Rendering ==========
@@ -779,7 +790,7 @@
 
     var center = turfMap.getCenter();
     var zoom = turfMap.getZoom();
-    var renderK = zoom >= 16 ? 8 : zoom >= 15 ? 12 : zoom >= 14 ? 16 : 20;
+    var renderK = zoom >= 16 ? 12 : zoom >= 15 ? 16 : zoom >= 14 ? 24 : 32;
     var showLabels = zoom >= 15;
     var viewCell = h3.geoToH3(center.lat, center.lng, H3_RES);
     var visibleCells = h3.kRing(viewCell, renderK);
@@ -790,209 +801,628 @@
       if (cellCenter[0] < bounds.getSouth() - 0.005 || cellCenter[0] > bounds.getNorth() + 0.005 ||
           cellCenter[1] < bounds.getWest() - 0.005 || cellCenter[1] > bounds.getEast() + 0.005) return;
 
-      var isExplored = territoryState && territoryState.explored && territoryState.explored.has(cell);
+      var isExplored = territoryState.explored.has(cell);
+      var boundary = h3.h3ToGeoBoundary(cell);
 
-      // Unexplored cells get fog overlay
+      // All cells get a subtle grid line
+      L.polygon(boundary, { color: '#ffffff', fillColor: 'transparent', fillOpacity: 0, weight: 0.3, opacity: 0.06, interactive: false }).addTo(hexLayer);
+
+      // Get territory data for this cell (works for both explored and fog)
+      var cp = territoryState.cells[cell];
+      var maxEid = null; var maxRp = 0;
+      if (cp) { for (var eid in cp) { if (cp[eid] > maxRp) { maxEid = eid; maxRp = cp[eid]; } } }
+
       if (!isExplored) {
-        var fogBoundary = h3.h3ToGeoBoundary(cell);
-        L.polygon(fogBoundary, { color: 'transparent', fillColor: '#08080c', fillOpacity: 0.85, weight: 0, interactive: false }).addTo(fogLayer);
+        // Fog of war: territory colors visible but darkened under fog
+        if (maxEid && maxRp > 0) {
+          var fogInfo = territoryState.entities[maxEid] || {};
+          var fogColor = fogInfo.color || '#888';
+          // Territory color layer — tint visible, map roads show through
+          L.polygon(boundary, { color: fogColor, fillColor: fogColor, fillOpacity: 0.2, weight: 0.8, opacity: 0.35, interactive: false }).addTo(fogLayer);
+          // Light dark overlay to mute slightly
+          L.polygon(boundary, { color: 'transparent', fillColor: '#05050a', fillOpacity: 0.25, weight: 0, interactive: false }).addTo(fogLayer);
+        } else {
+          // Unclaimed fog — light dark overlay, roads still visible
+          L.polygon(boundary, { color: 'transparent', fillColor: '#05050a', fillOpacity: 0.3, weight: 0, interactive: false }).addTo(fogLayer);
+        }
         return;
       }
 
-      var data = getCellData(cell);
-      var boundary = h3.h3ToGeoBoundary(cell);
+      // Explored cells: show grid outline
+      L.polygon(boundary, { color: '#ffffff', fillColor: 'transparent', fillOpacity: 0, weight: 0.3, opacity: 0.1, interactive: false }).addTo(hexLayer);
 
-      // Grid line for all explored cells
-      L.polygon(boundary, { color: '#ffffff', fillColor: 'transparent', fillOpacity: 0, weight: 0.3, opacity: 0.08, interactive: false }).addTo(hexLayer);
+      // Explored cells with territory
+      if (!maxEid || maxRp === 0) return;
 
-      if (!data) return;
-      var style = getHexStyle(data);
-      if (!style) return;
+      var userEid = territoryState.userEntityId;
+      var isYours = maxEid === userEid;
+      var info = territoryState.entities[maxEid] || {};
+      var ownerColor = info.color || '#ff6a00';
+      var userInfo = userEid ? (territoryState.entities[userEid] || {}) : {};
+      var myColor = userInfo.color || '#ff6a00';
 
-      if (data.owner !== 'neutral') {
-        if (data.defense >= 15) {
-          L.polygon(boundary, { color: style.color, fillColor: 'transparent', fillOpacity: 0, weight: 4, opacity: 0.15 + (data.defense >= 20 ? 0.1 : 0), interactive: false }).addTo(hexLayer);
-        }
-        L.polygon(boundary, { color: style.color, fillColor: style.fillColor, fillOpacity: style.fillOpacity, weight: style.weight, opacity: style.opacity, interactive: false }).addTo(hexLayer);
-
-        if (showLabels) {
-          var labelCenter = h3.h3ToGeo(cell);
-          var defColor = style.color;
-          var threatColor = data.owner === 'enemy' ? '#4ade80' : '#ef4444';
-          var ownerIcon = data.ownerType === 'group' ? '\uD83D\uDC65' : '\uD83C\uDFC3';
-          var labelHtml = '<div class="hex-label">'
-            + '<div class="hex-owner-badge" data-owner-type="' + data.ownerType + '" data-owner-name="' + (data.ownerName || '') + '" data-owner-init="' + (data.ownerInitials || '') + '" data-owner-def="' + data.defense + '">'
-            + '<span class="hex-owner-icon">' + ownerIcon + '</span><span class="hex-owner-init">' + (data.ownerInitials || '') + '</span></div>'
-            + '<div class="hex-def" style="color:' + defColor + '">\uD83D\uDEE1\uFE0F ' + data.defense + '</div>';
-          if (data.threat > 0) labelHtml += '<div class="hex-atk" style="color:' + threatColor + '">\u2694\uFE0F ' + data.threat + '</div>';
-          labelHtml += '</div>';
-          L.marker(labelCenter, { icon: L.divIcon({ className: '', html: labelHtml, iconSize: [68, 58], iconAnchor: [34, 29] }), interactive: false }).addTo(hexLayer);
-        }
+      if (isYours) {
+        // Glow layer — wide translucent border behind the cell
+        L.polygon(boundary, {
+          color: myColor, fillColor: 'transparent', fillOpacity: 0,
+          weight: 8, opacity: 0.25, interactive: false
+        }).addTo(hexLayer);
+        // Main cell — brighter fill + solid border
+        var poly = L.polygon(boundary, {
+          color: myColor, fillColor: myColor, fillOpacity: 0.4,
+          weight: 2, opacity: 0.9, interactive: true
+        }).addTo(hexLayer);
+        // Ownership badge — small shield icon only when zoomed in
+        // (integrated into label below)
       } else {
-        L.polygon(boundary, { color: style.color, fillColor: style.fillColor, fillOpacity: style.fillOpacity, weight: style.weight, opacity: style.opacity, interactive: false }).addTo(hexLayer);
+        // Enemy cells — muted, no glow
+        var poly = L.polygon(boundary, {
+          color: ownerColor, fillColor: ownerColor, fillOpacity: 0.2,
+          weight: 1.5, opacity: 0.6, interactive: true
+        }).addTo(hexLayer);
+      }
+
+      // Click to show cell info
+      (function(cellId, eId, rp, yours) {
+        poly.on('click', function() { showCellInfo(cellId, eId, rp, yours); });
+      })(cell, maxEid, maxRp, isYours);
+
+      if (showLabels) {
+        var userEid = territoryState.userEntityId;
+        var userInfo = userEid ? (territoryState.entities[userEid] || {}) : {};
+        var userColor = userInfo.color || '#4ade80';
+        var ownerRpVal = maxRp;
+        var challengerRp = 0;
+        var challengerEid = null;
+        if (isYours) {
+          ownerRpVal = cp[userEid] || 0;
+          for (var e in cp) { if (e !== userEid && cp[e] > challengerRp) { challengerRp = cp[e]; challengerEid = e; } }
+        } else {
+          ownerRpVal = maxRp;
+          challengerRp = (userEid && cp[userEid]) ? cp[userEid] : 0;
+        }
+
+        // Colors: defense = owner entity color, attack = attacker entity color
+        var defenseColor = ownerColor;
+        var attackColor;
+        if (isYours) {
+          // Your cell: attacker color = attacker's entity color
+          var chalInfo = challengerEid ? (territoryState.entities[challengerEid] || {}) : {};
+          attackColor = chalInfo.color || '#ef4444';
+        } else {
+          // Enemy cell: your attack color = your entity color
+          attackColor = userColor;
+        }
+
+        var total = ownerRpVal + challengerRp;
+        var chalPct = total > 0 ? Math.round((challengerRp / total) * 100) : 0;
+        var barHtml = '<div class="hex-bar"><div class="hex-bar-fill" style="width:' + chalPct + '%;background:' + attackColor + '"></div><div class="hex-bar-fill" style="width:' + (100 - chalPct) + '%;background:' + defenseColor + '"></div></div>';
+
+        var labelHtml = '<div class="hex-label">'
+          + (isYours ? '<div class="hex-own-badge">\\u2B50</div>' : '')
+          + '<div class="hex-rp-main" style="color:' + defenseColor + '">' + Math.round(ownerRpVal) + '</div>';
+        if (challengerRp > 0) {
+          labelHtml += barHtml;
+          labelHtml += '<div class="hex-rp-sub" style="color:' + attackColor + '">' + Math.round(challengerRp) + '</div>';
+        }
+        labelHtml += '</div>';
+        L.marker(cellCenter, { icon: L.divIcon({ className: '', html: labelHtml, iconSize: [52, 50], iconAnchor: [26, 25] }), interactive: false }).addTo(hexLayer);
       }
     });
-  }
-
-  var origNavigateTo = navigateTo;
-  navigateTo = function(pageId) {
-    origNavigateTo(pageId);
-    if (pageId === 'page-map' && turfMap) setTimeout(function() { turfMap.invalidateSize(); }, 100);
-  };
-
-  // ========== Hex Owner Click Popup ==========
-  document.addEventListener('click', function(e) {
-    var badge = e.target.closest('.hex-owner-badge');
-    if (!badge) { var existing = document.getElementById('hex-owner-popup'); if (existing) existing.remove(); return; }
-    e.stopPropagation();
-    var type = badge.getAttribute('data-owner-type');
-    var name = badge.getAttribute('data-owner-name');
-    var def = badge.getAttribute('data-owner-def');
-
-    var existing = document.getElementById('hex-owner-popup');
-    if (existing) existing.remove();
-
-    var popup = document.createElement('div');
-    popup.id = 'hex-owner-popup';
-    popup.className = 'hex-owner-popup';
-    var icon = type === 'group' ? '\u2691' : '\uD83D\uDC64';
-    var typeLabel = type === 'group' ? 'Group' : 'Player';
-    popup.innerHTML = '<div class="hop-header"><span class="hop-icon">' + icon + '</span><div><div class="hop-name">' + name + '</div><div class="hop-type">' + typeLabel + '</div></div></div>'
-      + '<div class="hop-stats"><div class="hop-stat"><span class="hop-num">' + def + '</span><span class="hop-lbl">Defense</span></div></div>';
-
-    document.querySelector('.map-container').appendChild(popup);
-    var rect = badge.getBoundingClientRect();
-    var mapRect = document.querySelector('.map-container').getBoundingClientRect();
-    popup.style.left = Math.min(rect.left - mapRect.left, mapRect.width - 180) + 'px';
-    popup.style.top = Math.max(rect.top - mapRect.top - popup.offsetHeight - 8, 8) + 'px';
-  });
-
-  // ========== User Data & UI Updates ==========
-  function loadUserData() {
-    return apiGet('/api/me').then(function(data) {
-      if (data.error) { console.error('User load error:', data.error); return; }
-      currentUser = data;
-      updateUI();
-    }).catch(function(err) { console.error('User load error:', err); });
-  }
-
-  var SKILL_ICONS = {
-    'wide-scan':'\uD83D\uDD2D','strike-force':'\uD83D\uDCA5','shield':'\uD83D\uDEE1\uFE0F','trailblazer':'\uD83C\uDFC3','ghost-run':'\uD83D\uDC7B',
-    'recon-sweep':'\uD83D\uDCE1','combined-arms':'\u2694\uFE0F','fortify-pair':'\uD83C\uDFF0','sync-bonus':'\uD83D\uDD17','lockdown':'\uD83D\uDD12',
-    'war-march':'\uD83D\uDEA9','iron-curtain':'\uD83E\uDDF1','rally-cry':'\uD83D\uDCE2','bounty-hunt':'\uD83D\uDCB0','siege-engine':'\uD83C\uDFD7\uFE0F'
-  };
-
-  function updateUI() {
-    if (!currentUser) return;
-    var u = currentUser.user;
-
-    var spEl = document.getElementById('sp-amount');
-    if (spEl) spEl.textContent = Math.floor(u.skillPoints);
-
-    var profileName = document.querySelector('.profile-name');
-    if (profileName) profileName.textContent = u.displayName;
-
-    var profileGroup = document.querySelector('.profile-group');
-    if (profileGroup && currentUser.group) profileGroup.textContent = currentUser.group.name;
-
-    var statNums = document.querySelectorAll('.profile-stats-grid .p-num');
-    if (statNums.length >= 4) {
-      statNums[0].textContent = u.totalRuns;
-      statNums[1].textContent = Math.floor(u.totalSpEarned);
-      statNums[2].textContent = u.totalDistanceMiles.toFixed(1) + ' mi';
-      statNums[3].textContent = u.totalCellsCaptured;
-    }
-
-    updateProfileSkills();
-    updateMapOverlayStats();
-
-    if (currentUser.skills) {
-      currentUser.skills.forEach(function(s) {
-        var card = document.querySelector('.skill-card[data-skill="' + s.skillId + '"]');
-        if (!card) return;
-        card.setAttribute('data-level', s.level);
-        var btn = card.querySelector('.skill-lvl-btn');
-        if (btn) {
-          if (s.level >= 5) { btn.textContent = 'MAX'; btn.disabled = true; }
-          else { var cost = LEVEL_COSTS[s.level]; btn.textContent = '\u2B06 ' + cost + ' SP'; btn.setAttribute('data-cost', cost); }
-        }
-        var pips = card.querySelectorAll('.skill-level-pip');
-        pips.forEach(function(pip, idx) {
-          if (idx < s.level) { pip.classList.add('filled'); var t = card.getAttribute('data-type'); if (t === 'double' || t === 'group') pip.classList.add('amber'); }
-          else { pip.classList.remove('filled'); pip.classList.remove('amber'); }
-        });
-        var levelLabel = card.querySelector('.skill-level-label');
-        if (levelLabel) levelLabel.textContent = 'Lv ' + s.level;
-      });
-    }
-
-    ['solo', 'double', 'group'].forEach(function(cat) {
-      var equippedSkill = u[cat === 'solo' ? 'soloSkill' : cat === 'double' ? 'doubleSkill' : 'groupSkill'];
-      var panel = document.getElementById('skills-' + cat);
-      if (!panel) return;
-      panel.querySelectorAll('.skill-card').forEach(function(c) {
-        c.classList.remove('equipped');
-        var badge = c.querySelector('.equipped-badge');
-        if (badge) badge.remove();
-      });
-      if (equippedSkill) {
-        var eqCard = panel.querySelector('.skill-card[data-skill="' + equippedSkill + '"]');
-        if (eqCard) {
-          eqCard.classList.add('equipped');
-          var top = eqCard.querySelector('.skill-top');
-          if (top && !eqCard.querySelector('.equipped-badge')) {
-            var badge = document.createElement('span');
-            badge.className = 'equipped-badge';
-            badge.textContent = 'Equipped';
-            top.appendChild(badge);
-          }
-        }
-      }
-    });
-  }
-
-  function updateProfileSkills() {
-    if (!currentUser) return;
-    var u = currentUser.user;
-    var eqSkills = document.querySelectorAll('.equipped-skill');
-    if (eqSkills.length >= 3) {
-      updateEqSlot(eqSkills[0], u.soloSkill, u.soloSkillLevel);
-      updateEqSlot(eqSkills[1], u.doubleSkill, u.doubleSkillLevel);
-      updateEqSlot(eqSkills[2], u.groupSkill, u.groupSkillLevel);
-    }
-  }
-
-  function updateEqSlot(el, skillId, level) {
-    var iconEl = el.querySelector('.eq-icon');
-    var nameEl = el.querySelector('.eq-name');
-    var lvlEl = el.querySelector('.eq-level');
-    if (iconEl) iconEl.textContent = (skillId && SKILL_ICONS[skillId]) ? SKILL_ICONS[skillId] : '\u2014';
-    if (nameEl) nameEl.textContent = skillId ? skillId.replace(/-/g, ' ').replace(/\\b\\w/g, function(c) { return c.toUpperCase(); }) : 'None';
-    if (lvlEl) lvlEl.textContent = skillId ? 'Level ' + level : '\u2014';
   }
 
   function updateMapOverlayStats() {
     if (!currentUser || !territoryState) return;
-    var stats = document.querySelectorAll('.map-overlay-stats .map-stat .value');
-    if (stats.length >= 3) {
-      var ownedCount = 0;
-      var totalPts = 0;
-      var userGroupId = currentUser.user.groupId;
-      for (var cid in territoryState.cells) {
-        var cp = territoryState.cells[cid];
-        var maxGid = null; var maxPts = 0;
-        for (var gid in cp) { if (cp[gid] > maxPts) { maxGid = gid; maxPts = cp[gid]; } }
-        if (maxGid === userGroupId) { ownedCount++; totalPts += maxPts; }
-      }
-      stats[0].textContent = ownedCount;
-      stats[1].textContent = totalPts > 999 ? (totalPts / 1000).toFixed(1) + 'K' : Math.round(totalPts);
-      if (currentUser.group) stats[2].textContent = currentUser.group.streakDays + 'd';
+    var ownedCount = 0;
+    var userEid = territoryState.userEntityId;
+    for (var cid in territoryState.cells) {
+      var cp = territoryState.cells[cid];
+      var maxEid = null; var maxRp = 0;
+      for (var eid in cp) { if (cp[eid] > maxRp) { maxEid = eid; maxRp = cp[eid]; } }
+      if (maxEid === userEid) ownedCount++;
     }
+    var heldEl = document.getElementById('stat-held');
+    if (heldEl) heldEl.textContent = ownedCount;
+    var rpEl = document.getElementById('stat-rp');
+    if (rpEl) rpEl.textContent = currentUser.user.rpLifetime;
   }
 
-  // ========== Initialize ==========
-  loadUserData();
-  initMap();
+  // ========== User Data ==========
+  var isAuthenticated = false;
+  function loadUserData() {
+    return apiGet('/api/me').then(function(data) {
+      if (data.status === 401 || data.error === 'Not authenticated') {
+        currentUser = null;
+        return;
+      }
+      currentUser = data;
+      updateProfile();
+      renderSkills();
+      updateMapOverlayStats();
+      var rpEl = document.getElementById('rp-available');
+      if (rpEl) rpEl.textContent = Math.floor(data.user.rpAvailable);
+      var usernameEl = document.getElementById('settings-username');
+      if (usernameEl) usernameEl.textContent = '@' + data.user.username;
+      var stravaEl = document.getElementById('settings-strava');
+      if (stravaEl) stravaEl.textContent = data.user.stravaLinked ? 'Linked' : 'Not linked (coming soon)';
+      // Update header avatar
+      var avatarEl = document.getElementById('header-avatar-initial');
+      if (avatarEl) avatarEl.textContent = (data.user.displayName || '?').charAt(0).toUpperCase();
+      var ddName = document.getElementById('dropdown-display-name');
+      if (ddName) ddName.textContent = data.user.displayName;
+      var ddUser = document.getElementById('dropdown-username');
+      if (ddUser) ddUser.textContent = '@' + data.user.username;
+    }).catch(function(err) { console.error('User load error:', err); });
+  }
+
+  // ========== Auth Flow ==========
+  var originalHeaderHtml = document.getElementById('app-header') ? document.getElementById('app-header').innerHTML : '';
+  function showAuthScreen() {
+    isAuthenticated = false;
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('app-header').style.display = 'none';
+    document.getElementById('page-container').style.display = 'none';
+    document.getElementById('bottom-nav').style.display = 'none';
+  }
+
+  function showApp() {
+    isAuthenticated = true;
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('app-header').style.display = '';
+    document.getElementById('page-container').style.display = '';
+    document.getElementById('bottom-nav').style.display = '';
+    // Restore original header (in case we were in unauth mode)
+    var header = document.getElementById('app-header');
+    if (header) header.innerHTML = originalHeaderHtml;
+    // Re-bind dropdown events after restoring HTML
+    bindProfileDropdown();
+    // Restore stats + add-run
+    var statsOverlay = document.querySelector('.map-overlay-stats');
+    if (statsOverlay) statsOverlay.style.display = '';
+    var quickActions = document.querySelector('.map-quick-actions');
+    if (quickActions) quickActions.style.display = '';
+  }
+
+  function showUnauthMap() {
+    isAuthenticated = false;
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('app-header').style.display = '';
+    document.getElementById('page-container').style.display = '';
+    document.getElementById('bottom-nav').style.display = 'none';
+    // Only show map page
+    pages.forEach(function(p) { p.classList.remove('active'); });
+    var mapPage = document.getElementById('page-map');
+    if (mapPage) mapPage.classList.add('active');
+    // Hide stats + add-run for unauth
+    var statsOverlay = document.querySelector('.map-overlay-stats');
+    if (statsOverlay) statsOverlay.style.display = 'none';
+    var quickActions = document.querySelector('.map-quick-actions');
+    if (quickActions) quickActions.style.display = 'none';
+    // Show a login button instead
+    var header = document.getElementById('app-header');
+    if (header) header.innerHTML = '<div class="logo">TURF</div><div class="header-actions"><button class="header-btn auth-login-link" id="header-login-btn">Login</button></div>';
+    var headerLogin = document.getElementById('header-login-btn');
+    if (headerLogin) headerLogin.addEventListener('click', function() { showAuthScreen(); });
+  }
+
+  // Auth form handlers
+  var showRegisterLink = document.getElementById('show-register');
+  var showLoginLink = document.getElementById('show-login');
+  var loginForm = document.getElementById('auth-login');
+  var registerForm = document.getElementById('auth-register');
+
+  if (showRegisterLink) showRegisterLink.addEventListener('click', function(e) {
+    e.preventDefault();
+    loginForm.style.display = 'none';
+    registerForm.style.display = '';
+  });
+  if (showLoginLink) showLoginLink.addEventListener('click', function(e) {
+    e.preventDefault();
+    registerForm.style.display = 'none';
+    loginForm.style.display = '';
+  });
+
+  // Login handler
+  var loginBtn = document.getElementById('login-btn');
+  if (loginBtn) loginBtn.addEventListener('click', function() {
+    var username = document.getElementById('login-username').value.trim();
+    var password = document.getElementById('login-password').value;
+    var errorEl = document.getElementById('login-error');
+    if (!username || !password) { errorEl.textContent = 'Enter username and password'; return; }
+    loginBtn.disabled = true; loginBtn.textContent = 'Logging in...'; errorEl.textContent = '';
+    apiPost('/api/auth/login', { username: username, password: password }).then(function(res) {
+      loginBtn.disabled = false; loginBtn.textContent = 'Login';
+      if (res.error) { errorEl.textContent = res.error; return; }
+      loadUserData().then(function() {
+        showApp();
+        if (!turfMap) initMap(); else { turfMap.invalidateSize(); loadTerritory().then(function() { renderHexGrid(); checkAndSeedTerritory(); }); }
+      });
+    }).catch(function() { loginBtn.disabled = false; loginBtn.textContent = 'Login'; errorEl.textContent = 'Network error'; });
+  });
+
+  // Register handler
+  var registerBtn = document.getElementById('register-btn');
+  if (registerBtn) registerBtn.addEventListener('click', function() {
+    var username = document.getElementById('register-username').value.trim();
+    var displayName = document.getElementById('register-display').value.trim();
+    var password = document.getElementById('register-password').value;
+    var errorEl = document.getElementById('register-error');
+    if (!username || !password) { errorEl.textContent = 'Username and password required'; return; }
+    registerBtn.disabled = true; registerBtn.textContent = 'Creating...'; errorEl.textContent = '';
+    apiPost('/api/auth/register', { username: username, password: password, displayName: displayName || undefined }).then(function(res) {
+      registerBtn.disabled = false; registerBtn.textContent = 'Create Account';
+      if (res.error) { errorEl.textContent = res.error; return; }
+      loadUserData().then(function() {
+        showApp();
+        if (!turfMap) initMap(); else { turfMap.invalidateSize(); loadTerritory().then(function() { renderHexGrid(); checkAndSeedTerritory(); }); }
+      });
+    }).catch(function() { registerBtn.disabled = false; registerBtn.textContent = 'Create Account'; errorEl.textContent = 'Network error'; });
+  });
+
+  // Enter key handlers for auth inputs
+  ['login-username', 'login-password'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', function(e) { if (e.key === 'Enter') loginBtn.click(); });
+  });
+  ['register-username', 'register-display', 'register-password'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', function(e) { if (e.key === 'Enter') registerBtn.click(); });
+  });
+
+  // Explore without account
+  var exploreBtn = document.getElementById('auth-explore-btn');
+  if (exploreBtn) exploreBtn.addEventListener('click', function() {
+    showUnauthMap();
+    if (!turfMap) initMap();
+    else loadTerritory().then(function() { renderHexGrid(); });
+  });
+
+  // Logout (settings page)
+  var logoutBtn = document.getElementById('logout-btn');
+  if (logoutBtn) logoutBtn.addEventListener('click', doLogout);
+
+  // Logout (dropdown)
+  var dropdownLogoutBtn = document.getElementById('dropdown-logout-btn');
+  if (dropdownLogoutBtn) dropdownLogoutBtn.addEventListener('click', doLogout);
+
+  function doLogout() {
+    apiPost('/api/auth/logout', {}).then(function() {
+      currentUser = null;
+      isAuthenticated = false;
+      showAuthScreen();
+    });
+  }
+
+  // Profile dropdown toggle
+  function bindProfileDropdown() {
+    var profileIconBtn = document.getElementById('profile-icon-btn');
+    var profileDropdown = document.getElementById('profile-dropdown');
+    if (profileIconBtn && profileDropdown) {
+      profileIconBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var isOpen = profileDropdown.style.display !== 'none';
+        profileDropdown.style.display = isOpen ? 'none' : 'block';
+      });
+      // Dropdown nav items
+      profileDropdown.querySelectorAll('[data-page]').forEach(function(item) {
+        item.addEventListener('click', function() {
+          profileDropdown.style.display = 'none';
+          var pageId = item.getAttribute('data-page');
+          if (pageId) navigateTo(pageId);
+        });
+      });
+      // Dropdown logout
+      var ddLogout = document.getElementById('dropdown-logout-btn');
+      if (ddLogout) ddLogout.addEventListener('click', doLogout);
+    }
+    // Update avatar
+    if (currentUser) {
+      var avatarEl = document.getElementById('header-avatar-initial');
+      if (avatarEl) avatarEl.textContent = (currentUser.user.displayName || '?').charAt(0).toUpperCase();
+      var ddName = document.getElementById('dropdown-display-name');
+      if (ddName) ddName.textContent = currentUser.user.displayName;
+      var ddUser = document.getElementById('dropdown-username');
+      if (ddUser) ddUser.textContent = '@' + currentUser.user.username;
+    }
+  }
+  document.addEventListener('click', function(e) {
+    var dd = document.getElementById('profile-dropdown');
+    if (dd && !e.target.closest('.profile-dropdown-wrap')) dd.style.display = 'none';
+  });
+  bindProfileDropdown();
+
+  // ========== Init ==========
+  loadUserData().then(function() {
+    if (currentUser) {
+      showApp();
+      initMap();
+    } else {
+      showAuthScreen();
+    }
+  });
+
+  // ========== Cell Info Popup ==========
+  function showCellInfo(cellId, entityId, rp, isYours) {
+    if (!turfMap || typeof h3 === 'undefined') return;
+    var info = territoryState.entities[entityId] || {};
+    var ownerName = info.name || entityId;
+    var ownerColor = info.color || '#888';
+    var cellCenter = h3.h3ToGeo(cellId);
+
+    var cp = territoryState.cells[cellId] || {};
+    var userEid = territoryState.userEntityId;
+    var userInfo = userEid ? (territoryState.entities[userEid] || {}) : {};
+    var userColor = userInfo.color || '#4ade80';
+    var ownerRpVal = 0;
+    var yourRpVal = 0;
+    var challengerName = '';
+    var attackColor = '';
+    var defenseColor = ownerColor;
+
+    if (isYours) {
+      ownerRpVal = cp[userEid] || 0;
+      var topE = null; var topR = 0;
+      for (var e in cp) { if (e !== userEid && cp[e] > topR) { topR = cp[e]; topE = e; } }
+      yourRpVal = topR;
+      if (topE) {
+        var ci = territoryState.entities[topE] || {};
+        challengerName = ci.name || topE;
+        attackColor = ci.color || '#ef4444';
+      }
+    } else {
+      ownerRpVal = rp;
+      yourRpVal = (userEid && cp[userEid]) ? cp[userEid] : 0;
+      challengerName = userInfo.name || 'You';
+      attackColor = userColor;
+    }
+
+    var gap = ownerRpVal - yourRpVal;
+    var total = ownerRpVal + yourRpVal;
+    var chalPct = total > 0 ? Math.round((yourRpVal / total) * 100) : 0;
+
+    // Progress bar — attacker fills left→right, owner defense holds right side
+    var barHtml = '<div style="display:flex;height:6px;border-radius:3px;overflow:hidden;background:#1a1a2e;margin:8px 0;">'
+      + (yourRpVal > 0 ? '<div style="width:' + chalPct + '%;background:' + attackColor + ';transition:width 0.3s;"></div>' : '')
+      + '<div style="width:' + (100 - chalPct) + '%;background:' + defenseColor + ';transition:width 0.3s;"></div>'
+      + '</div>';
+
+    // Gap message
+    var gapHtml = '';
+    if (yourRpVal > 0) {
+      if (isYours) {
+        gapHtml = gap > 0
+          ? '<div style="font-size:12px;color:' + defenseColor + ';margin-top:4px;">Leading by ' + Math.round(gap) + ' RP</div>'
+          : '<div style="font-size:12px;color:' + attackColor + ';margin-top:4px;">Losing by ' + Math.round(Math.abs(gap)) + ' RP!</div>';
+      } else {
+        gapHtml = gap > 0
+          ? '<div style="font-size:12px;color:#8a8a96;margin-top:4px;">Need ' + Math.round(gap) + ' more RP to capture</div>'
+          : '<div style="font-size:12px;color:' + attackColor + ';margin-top:4px;">Ready to capture!</div>';
+      }
+    }
+
+    // Comparison layout — matches bar: attacker left, defender right
+    var vsHtml = '';
+    if (yourRpVal > 0) {
+      var leftLabel = isYours ? challengerName : (userInfo.name || 'Your Attack');
+      var leftColor = attackColor;
+      var leftRp = yourRpVal;
+      var rightLabel = isYours ? (userInfo.name || 'Your Defense') : ownerName;
+      var rightColor = defenseColor;
+      var rightRp = ownerRpVal;
+      vsHtml = '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">'
+        + '<div style="text-align:left;"><div style="font-size:11px;color:#8a8a96;">' + leftLabel + '</div>'
+        + '<div style="font-size:20px;font-weight:800;color:' + leftColor + ';">' + Math.round(leftRp) + '</div></div>'
+        + '<div style="font-size:12px;color:#555;font-weight:700;">vs</div>'
+        + '<div style="text-align:right;"><div style="font-size:11px;color:#8a8a96;">' + rightLabel + '</div>'
+        + '<div style="font-size:20px;font-weight:800;color:' + rightColor + ';">' + Math.round(rightRp) + '</div></div>'
+        + '</div>';
+    } else {
+      vsHtml = '<div style="text-align:center;margin-top:6px;">'
+        + '<div style="font-size:24px;font-weight:800;color:' + defenseColor + ';">' + Math.round(ownerRpVal) + ' <span style="font-size:12px;color:#8a8a96;">RP</span></div>'
+        + '</div>';
+    }
+
+    var content = '<div style="min-width:150px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">'
+      + '<div style="text-align:center;margin-bottom:4px;">'
+      + '<div style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + ownerColor + ';margin-right:6px;vertical-align:middle;"></div>'
+      + '<span style="font-weight:700;font-size:13px;color:#e8e8ec;">' + ownerName + (isYours ? ' (You)' : '') + '</span>'
+      + '</div>'
+      + vsHtml + barHtml + gapHtml
+      + '</div>';
+
+    L.popup({ className: 'turf-popup', closeButton: true, autoPan: true, offset: [0, -5] })
+      .setLatLng(cellCenter)
+      .setContent(content)
+      .openOn(turfMap);
+  }
+
+  // ========== Recenter Button ==========
+  var userMarker = null;
+  var recenterBtn = document.getElementById('map-recenter-btn');
+  if (recenterBtn) {
+    recenterBtn.addEventListener('click', function() {
+      if (navigator.geolocation) {
+        var origHtml = recenterBtn.innerHTML;
+        recenterBtn.innerHTML = '<div class="spinner"></div>';
+        navigator.geolocation.getCurrentPosition(function(pos) {
+          userLat = pos.coords.latitude; userLng = pos.coords.longitude;
+          if (turfMap) turfMap.setView([userLat, userLng], DEFAULT_ZOOM);
+          addUserMarker(userLat, userLng);
+          recenterBtn.innerHTML = origHtml;
+        }, function() {
+          recenterBtn.innerHTML = origHtml;
+          if (userLat && userLng && turfMap) turfMap.setView([userLat, userLng], DEFAULT_ZOOM);
+        }, { timeout: 8000, enableHighAccuracy: true });
+      } else if (userLat && userLng && turfMap) {
+        turfMap.setView([userLat, userLng], DEFAULT_ZOOM);
+      }
+    });
+  }
+
+  // ========== Map Search with Autocomplete ==========
+  var searchBtn = document.getElementById('map-search-btn');
+  var searchBar = document.getElementById('map-search-bar');
+  var searchInput = document.getElementById('map-search-input');
+  var searchGo = document.getElementById('map-search-go');
+  var searchClose = document.getElementById('map-search-close');
+  var suggestionsEl = document.getElementById('map-search-suggestions');
+  var searchDebounce = null;
+
+  if (searchBtn) searchBtn.addEventListener('click', function() {
+    if (searchBar) { searchBar.style.display = 'flex'; if (searchInput) { searchInput.value = ''; searchInput.focus(); } }
+  });
+  if (searchClose) searchClose.addEventListener('click', function() {
+    if (searchBar) searchBar.style.display = 'none';
+    if (suggestionsEl) suggestionsEl.style.display = 'none';
+  });
+
+  function fetchSuggestions(query) {
+    if (!query || query.length < 2) { if (suggestionsEl) suggestionsEl.style.display = 'none'; return; }
+    fetch('https://nominatim.openstreetmap.org/search?format=json&limit=5&q=' + encodeURIComponent(query), {
+      headers: { 'Accept': 'application/json' }
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (!data || !data.length) { if (suggestionsEl) suggestionsEl.style.display = 'none'; return; }
+      var html = '';
+      data.forEach(function(item) {
+        var parts = item.display_name.split(',');
+        var main = parts[0].trim();
+        var sub = parts.slice(1, 3).join(',').trim();
+        html += '<div class="map-search-suggestion" data-lat="' + item.lat + '" data-lng="' + item.lon + '">'
+          + '<div>' + main + '</div>'
+          + (sub ? '<div class="map-search-suggestion-sub">' + sub + '</div>' : '')
+          + '</div>';
+      });
+      if (suggestionsEl) {
+        suggestionsEl.innerHTML = html;
+        suggestionsEl.style.display = 'block';
+        suggestionsEl.querySelectorAll('.map-search-suggestion').forEach(function(el) {
+          el.addEventListener('click', function() {
+            var lat = parseFloat(el.getAttribute('data-lat'));
+            var lng = parseFloat(el.getAttribute('data-lng'));
+            if (turfMap) turfMap.setView([lat, lng], DEFAULT_ZOOM);
+            if (searchBar) searchBar.style.display = 'none';
+            if (suggestionsEl) suggestionsEl.style.display = 'none';
+          });
+        });
+      }
+    }).catch(function() {});
+  }
+
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      if (searchDebounce) clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(function() { fetchSuggestions(searchInput.value.trim()); }, 300);
+    });
+  }
+
+  function doMapSearch() {
+    var query = searchInput ? searchInput.value.trim() : '';
+    if (!query) return;
+    if (suggestionsEl) suggestionsEl.style.display = 'none';
+    if (searchGo) { searchGo.textContent = '...'; searchGo.disabled = true; }
+    fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(query), {
+      headers: { 'Accept': 'application/json' }
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (searchGo) { searchGo.textContent = 'Go'; searchGo.disabled = false; }
+      if (data && data.length > 0) {
+        var lat = parseFloat(data[0].lat);
+        var lng = parseFloat(data[0].lon);
+        if (turfMap) turfMap.setView([lat, lng], DEFAULT_ZOOM);
+        if (searchBar) searchBar.style.display = 'none';
+      } else {
+        if (searchInput) searchInput.placeholder = 'Not found, try again...';
+      }
+    }).catch(function() {
+      if (searchGo) { searchGo.textContent = 'Go'; searchGo.disabled = false; }
+    });
+  }
+
+  if (searchGo) searchGo.addEventListener('click', doMapSearch);
+  if (searchInput) searchInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') doMapSearch(); });
+
+  // ========== Color Pickers ==========
+  var userColorPicker = document.getElementById('user-color-picker');
+  if (userColorPicker) {
+    userColorPicker.addEventListener('input', function() {
+      var desc = document.getElementById('settings-color');
+      if (desc) desc.textContent = userColorPicker.value;
+    });
+    userColorPicker.addEventListener('change', function() {
+      apiPost('/api/user/color', { color: userColorPicker.value }).then(function(res) {
+        if (res.color) {
+          currentUser.user.color = res.color;
+          loadTerritory().then(function() { renderHexGrid(); });
+        }
+      });
+    });
+  }
+
+  var groupColorPicker = document.getElementById('group-color-picker');
+  if (groupColorPicker) {
+    groupColorPicker.addEventListener('change', function() {
+      apiPost('/api/group/color', { color: groupColorPicker.value }).then(function(res) {
+        if (res.error) { alert(res.error); return; }
+        loadGroupData();
+        loadTerritory().then(function() { renderHexGrid(); });
+      });
+    });
+  }
+
+  // ========== Dev Tools (localhost only) ==========
+  var isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (isLocalhost) {
+    var devPanel = document.getElementById('dev-panel');
+    if (devPanel) devPanel.style.display = 'block';
+
+    var devToggle = document.getElementById('dev-toggle-btn');
+    var devDrawer = document.getElementById('dev-drawer');
+    var devClose = document.getElementById('dev-drawer-close');
+    var devLog = document.getElementById('dev-log');
+
+    function devLogMsg(msg) { if (devLog) { devLog.textContent = msg; setTimeout(function() { devLog.textContent = ''; }, 3000); } }
+
+    if (devToggle) devToggle.addEventListener('click', function() {
+      devDrawer.style.display = devDrawer.style.display === 'none' ? 'block' : 'none';
+    });
+    if (devClose) devClose.addEventListener('click', function() { devDrawer.style.display = 'none'; });
+
+    // Give RP
+    var devGiveRpBtn = document.getElementById('dev-give-rp-btn');
+    if (devGiveRpBtn) devGiveRpBtn.addEventListener('click', function() {
+      var amount = parseInt(document.getElementById('dev-rp-amount').value) || 100;
+      devGiveRpBtn.textContent = '...';
+      apiPost('/api/dev/give-rp', { amount: amount }).then(function(res) {
+        devGiveRpBtn.textContent = 'Give RP';
+        if (res.error) { devLogMsg('Error: ' + res.error); return; }
+        devLogMsg('Gave ' + amount + ' RP');
+        loadUserData();
+      });
+    });
+
+    // Seed territory
+    var devSeedBtn = document.getElementById('dev-seed-btn');
+    if (devSeedBtn) devSeedBtn.addEventListener('click', function() {
+      var lat = userLat || 39.8;
+      var lng = userLng || -98.5;
+      devSeedBtn.textContent = 'Seeding...';
+      seedTerritoryData(lat, lng);
+      setTimeout(function() { devSeedBtn.textContent = 'Seed Territory at GPS'; devLogMsg('Territory seeded'); }, 1500);
+    });
+
+    // Reset DB
+    var devResetBtn = document.getElementById('dev-reset-btn');
+    if (devResetBtn) devResetBtn.addEventListener('click', function() {
+      if (!confirm('Reset all territory, discoveries, and runs?')) return;
+      devResetBtn.textContent = 'Resetting...';
+      apiPost('/api/dev/reset-db', {}).then(function(res) {
+        devResetBtn.textContent = 'Reset Territory + Runs';
+        if (res.error) { devLogMsg('Error: ' + res.error); return; }
+        devLogMsg('Database reset');
+        loadTerritory().then(function() { renderHexGrid(); updateMapOverlayStats(); });
+        loadUserData();
+      });
+    });
+  }
 })();
 `;
 }
