@@ -1,4 +1,5 @@
 import { getAppHtml } from "./ui/app";
+import { getPrivacyHtml } from "./ui/privacy";
 import { getManifest } from "./pwa/manifest";
 import { getServiceWorker } from "./pwa/serviceWorker";
 import { handleApi } from "./api";
@@ -21,6 +22,11 @@ export default {
 			case "/sw.js":
 				return new Response(getServiceWorker(), {
 					headers: { "content-type": "application/javascript" },
+				});
+
+			case "/privacy":
+				return new Response(getPrivacyHtml(), {
+					headers: { "content-type": "text/html;charset=UTF-8" },
 				});
 
 			default:

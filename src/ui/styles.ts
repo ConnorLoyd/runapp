@@ -535,6 +535,13 @@ html, body {
 .auth-btn:disabled { opacity: 0.5; cursor: default; }
 .auth-btn.primary { background: var(--accent); color: #fff; }
 .auth-btn.primary:hover:not(:disabled) { opacity: 0.9; }
+.auth-btn.strava-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  text-decoration: none; text-align: center;
+  background: #FC4C02; color: #fff;
+}
+.auth-btn.strava-btn:hover { opacity: 0.9; }
+.strava-icon { flex-shrink: 0; }
 .auth-btn.secondary {
   background: transparent; color: var(--text-secondary);
   border: 1px solid var(--border);
@@ -547,16 +554,23 @@ html, body {
 .auth-switch a { color: var(--accent); text-decoration: none; font-weight: 600; }
 .auth-switch a:hover { text-decoration: underline; }
 .auth-explore { margin-top: 24px; }
+.auth-privacy { margin-top: 16px; text-align: center; font-size: 12px; }
+.auth-privacy a { color: var(--text-muted); text-decoration: none; }
+.auth-privacy a:hover { color: var(--text-secondary); text-decoration: underline; }
 .auth-login-link {
-  background: var(--accent) !important; color: #fff !important;
+  background: #FC4C02 !important; color: #fff !important;
   padding: 6px 14px !important; border-radius: var(--radius-sm) !important;
   font-weight: 700 !important; font-size: 13px !important;
   width: auto !important; height: auto !important;
-  white-space: nowrap;
+  white-space: nowrap; text-decoration: none;
 }
 .settings-item-btn { cursor: pointer; }
 .settings-item-btn:hover { background: var(--bg-card-hover); }
 .settings-danger { color: var(--danger); }
+.strava-attribution {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  margin-top: 24px; padding: 12px; font-size: 12px; color: var(--text-muted);
+}
 
 /* ========== PROFILE DROPDOWN ========== */
 .profile-dropdown-wrap { position: relative; }

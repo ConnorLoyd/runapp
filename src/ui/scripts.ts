@@ -941,17 +941,15 @@ export function getScripts(): string {
       updateMapOverlayStats();
       var rpEl = document.getElementById('rp-available');
       if (rpEl) rpEl.textContent = Math.floor(data.user.rpAvailable);
-      var usernameEl = document.getElementById('settings-username');
-      if (usernameEl) usernameEl.textContent = '@' + data.user.username;
       var stravaEl = document.getElementById('settings-strava');
-      if (stravaEl) stravaEl.textContent = data.user.stravaLinked ? 'Linked' : 'Not linked (coming soon)';
+      if (stravaEl) stravaEl.textContent = data.user.stravaLinked ? 'Linked' : 'Not linked';
       // Update header avatar
       var avatarEl = document.getElementById('header-avatar-initial');
       if (avatarEl) avatarEl.textContent = (data.user.displayName || '?').charAt(0).toUpperCase();
       var ddName = document.getElementById('dropdown-display-name');
       if (ddName) ddName.textContent = data.user.displayName;
       var ddUser = document.getElementById('dropdown-username');
-      if (ddUser) ddUser.textContent = '@' + data.user.username;
+      if (ddUser) ddUser.textContent = data.user.displayName;
     }).catch(function(err) { console.error('User load error:', err); });
   }
 
@@ -1000,76 +998,10 @@ export function getScripts(): string {
     if (quickActions) quickActions.style.display = 'none';
     // Show a login button instead
     var header = document.getElementById('app-header');
-    if (header) header.innerHTML = '<div class="logo">TURF</div><div class="header-actions"><button class="header-btn auth-login-link" id="header-login-btn">Login</button></div>';
-    var headerLogin = document.getElementById('header-login-btn');
-    if (headerLogin) headerLogin.addEventListener('click', function() { showAuthScreen(); });
+    if (header) header.innerHTML = '<div class="logo">TURF RUNNER</div><div class="header-actions"><a href="/api/auth/strava" class="header-btn auth-login-link" id="header-login-btn">Login with Strava</a></div>';
   }
 
-  // Auth form handlers
-  var showRegisterLink = document.getElementById('show-register');
-  var showLoginLink = document.getElementById('show-login');
-  var loginForm = document.getElementById('auth-login');
-  var registerForm = document.getElementById('auth-register');
-
-  if (showRegisterLink) showRegisterLink.addEventListener('click', function(e) {
-    e.preventDefault();
-    loginForm.style.display = 'none';
-    registerForm.style.display = '';
-  });
-  if (showLoginLink) showLoginLink.addEventListener('click', function(e) {
-    e.preventDefault();
-    registerForm.style.display = 'none';
-    loginForm.style.display = '';
-  });
-
-  // Login handler
-  var loginBtn = document.getElementById('login-btn');
-  if (loginBtn) loginBtn.addEventListener('click', function() {
-    var username = document.getElementById('login-username').value.trim();
-    var password = document.getElementById('login-password').value;
-    var errorEl = document.getElementById('login-error');
-    if (!username || !password) { errorEl.textContent = 'Enter username and password'; return; }
-    loginBtn.disabled = true; loginBtn.textContent = 'Logging in...'; errorEl.textContent = '';
-    apiPost('/api/auth/login', { username: username, password: password }).then(function(res) {
-      loginBtn.disabled = false; loginBtn.textContent = 'Login';
-      if (res.error) { errorEl.textContent = res.error; return; }
-      loadUserData().then(function() {
-        showApp();
-        if (!turfMap) initMap(); else { turfMap.invalidateSize(); loadTerritory().then(function() { renderHexGrid(); checkAndSeedTerritory(); }); }
-      });
-    }).catch(function() { loginBtn.disabled = false; loginBtn.textContent = 'Login'; errorEl.textContent = 'Network error'; });
-  });
-
-  // Register handler
-  var registerBtn = document.getElementById('register-btn');
-  if (registerBtn) registerBtn.addEventListener('click', function() {
-    var username = document.getElementById('register-username').value.trim();
-    var displayName = document.getElementById('register-display').value.trim();
-    var password = document.getElementById('register-password').value;
-    var errorEl = document.getElementById('register-error');
-    if (!username || !password) { errorEl.textContent = 'Username and password required'; return; }
-    registerBtn.disabled = true; registerBtn.textContent = 'Creating...'; errorEl.textContent = '';
-    apiPost('/api/auth/register', { username: username, password: password, displayName: displayName || undefined }).then(function(res) {
-      registerBtn.disabled = false; registerBtn.textContent = 'Create Account';
-      if (res.error) { errorEl.textContent = res.error; return; }
-      loadUserData().then(function() {
-        showApp();
-        if (!turfMap) initMap(); else { turfMap.invalidateSize(); loadTerritory().then(function() { renderHexGrid(); checkAndSeedTerritory(); }); }
-      });
-    }).catch(function() { registerBtn.disabled = false; registerBtn.textContent = 'Create Account'; errorEl.textContent = 'Network error'; });
-  });
-
-  // Enter key handlers for auth inputs
-  ['login-username', 'login-password'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.addEventListener('keydown', function(e) { if (e.key === 'Enter') loginBtn.click(); });
-  });
-  ['register-username', 'register-display', 'register-password'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.addEventListener('keydown', function(e) { if (e.key === 'Enter') registerBtn.click(); });
-  });
-
-  // Explore without account
+  // Explore without account (guest mode)
   var exploreBtn = document.getElementById('auth-explore-btn');
   if (exploreBtn) exploreBtn.addEventListener('click', function() {
     showUnauthMap();
@@ -1122,7 +1054,7 @@ export function getScripts(): string {
       var ddName = document.getElementById('dropdown-display-name');
       if (ddName) ddName.textContent = currentUser.user.displayName;
       var ddUser = document.getElementById('dropdown-username');
-      if (ddUser) ddUser.textContent = '@' + currentUser.user.username;
+      if (ddUser) ddUser.textContent = currentUser.user.displayName;
     }
   }
   document.addEventListener('click', function(e) {
@@ -1367,6 +1299,19 @@ export function getScripts(): string {
       });
     });
   }
+
+  // ========== Strava Disconnect ==========
+  var stravaDisconnectBtn = document.getElementById('strava-disconnect-btn');
+  if (stravaDisconnectBtn) stravaDisconnectBtn.addEventListener('click', function() {
+    if (!confirm('Disconnect Strava? Your game progress (RP, territory, skills) will be kept, but you will be logged out and Strava data removed.')) return;
+    apiPost('/api/auth/strava/disconnect', {}).then(function(res) {
+      if (res.success) {
+        currentUser = null;
+        isAuthenticated = false;
+        showAuthScreen();
+      }
+    });
+  });
 
   // ========== Dev Tools (localhost only) ==========
   var isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';

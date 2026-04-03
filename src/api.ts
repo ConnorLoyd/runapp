@@ -1,4 +1,4 @@
-// Turf MVP API — real auth, session-based, RP system, solo skills
+// Turf Runner API — Strava OAuth, session-based, RP system, solo skills
 
 const LEVEL_COSTS = [5, 15, 30, 50, 80];
 
@@ -43,26 +43,6 @@ function isLocal(request: Request): boolean {
   return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
 }
 
-// Password hashing with PBKDF2
-async function hashPassword(password: string, salt?: string): Promise<{ hash: string; salt: string }> {
-  const s = salt || crypto.randomUUID();
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: enc.encode(s), iterations: 100000, hash: 'SHA-256' },
-    keyMaterial, 256
-  );
-  const hashArray = Array.from(new Uint8Array(bits));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return { hash: s + ':' + hashHex, salt: s };
-}
-
-async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
-  const [salt] = storedHash.split(':');
-  const { hash } = await hashPassword(password, salt);
-  return hash === storedHash;
-}
-
 function getSessionToken(request: Request): string | null {
   const cookies = request.headers.get('Cookie') || '';
   const match = cookies.match(/turf_session=([^;]+)/);
@@ -84,10 +64,15 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
   const method = request.method;
 
   try {
-    // Public endpoints (no auth required)
-    if (method === 'POST' && path === '/api/auth/register') return await register(env, await request.json());
-    if (method === 'POST' && path === '/api/auth/login') return await login(env, await request.json());
+    // Strava OAuth endpoints (no auth required)
+    if (method === 'GET' && path === '/api/auth/strava') return stravaRedirect(request, env);
+    if (method === 'GET' && path === '/api/auth/strava/callback') return await stravaCallback(request, env);
     if (method === 'POST' && path === '/api/auth/logout') return await logout(request, env);
+
+    // Strava deauthorization webhook (called by Strava when user revokes access)
+    if (method === 'POST' && path === '/api/webhooks/strava') return await stravaDeauthorize(env, await request.json());
+    // Strava webhook verification (GET for subscription validation)
+    if (method === 'GET' && path === '/api/webhooks/strava') return stravaWebhookVerify(request);
 
     // Territory is accessible to everyone (unauth gets fog-only)
     if (method === 'GET' && path === '/api/territory') return await getTerritory(request, env);
@@ -114,6 +99,7 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
       if (path === '/api/user/color') return await updateUserColor(env, userId, await request.json());
       if (path === '/api/group/color') return await updateGroupColor(env, userId, await request.json());
       if (path === '/api/seed-territory') return await seedTerritory(env, userId, user, await request.json());
+      if (path === '/api/auth/strava/disconnect') return await stravaDisconnect(env, userId, user);
     }
 
     // Dev-only endpoints
@@ -129,52 +115,82 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
   }
 }
 
-// ==================== Auth ====================
+// ==================== Auth (Strava OAuth) ====================
 
-async function register(env: Env, body: unknown): Promise<Response> {
-  const db = env.DB;
-  const { username, password, displayName } = body as { username: string; password: string; displayName?: string };
-
-  if (!username || username.length < 3 || username.length > 20) return json({ error: 'Username must be 3-20 characters' }, 400);
-  if (!password || password.length < 6) return json({ error: 'Password must be at least 6 characters' }, 400);
-  if (!/^[a-zA-Z0-9_-]+$/.test(username)) return json({ error: 'Username can only contain letters, numbers, _ and -' }, 400);
-
-  const existing = await db.prepare('SELECT id FROM users WHERE username = ?').bind(username.toLowerCase()).first();
-  if (existing) return json({ error: 'Username already taken' }, 409);
-
-  const { hash } = await hashPassword(password);
-  const userId = 'usr-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
-  const sessionToken = crypto.randomUUID();
-  const sessionExpires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-  await db.prepare(
-    'INSERT INTO users (id, username, password_hash, display_name, session_token, session_expires) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(userId, username.toLowerCase(), hash, displayName || username, sessionToken, sessionExpires).run();
-
-  const cookie = `turf_session=${sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`;
-  return jsonWithCookie({ userId, username: username.toLowerCase(), displayName: displayName || username }, cookie);
+function stravaRedirect(request: Request, env: Env): Response {
+  const url = new URL(request.url);
+  const redirectUri = `${url.origin}/api/auth/strava/callback`;
+  const scope = 'read,activity:read';
+  const stravaUrl = `https://www.strava.com/oauth/authorize?client_id=${env.STRAVA_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}&approval_prompt=auto`;
+  return Response.redirect(stravaUrl, 302);
 }
 
-async function login(env: Env, body: unknown): Promise<Response> {
+async function stravaCallback(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const code = url.searchParams.get('code');
+  const error = url.searchParams.get('error');
+
+  if (error || !code) {
+    return new Response('<html><body><script>window.location="/";</script></body></html>', {
+      headers: { 'Content-Type': 'text/html' },
+    });
+  }
+
+  // Exchange code for token
+  const tokenRes = await fetch('https://www.strava.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: env.STRAVA_CLIENT_ID,
+      client_secret: env.STRAVA_CLIENT_SECRET,
+      code,
+      grant_type: 'authorization_code',
+    }),
+  });
+
+  if (!tokenRes.ok) {
+    return new Response('<html><body><script>window.location="/";</script></body></html>', {
+      headers: { 'Content-Type': 'text/html' },
+    });
+  }
+
+  const tokenData = await tokenRes.json() as {
+    access_token: string;
+    refresh_token: string;
+    expires_at: number;
+    athlete: { id: number; firstname: string; lastname: string };
+  };
+
+  const stravaId = String(tokenData.athlete.id);
+  const displayName = [tokenData.athlete.firstname, tokenData.athlete.lastname].filter(Boolean).join(' ') || 'Runner';
   const db = env.DB;
-  const { username, password } = body as { username: string; password: string };
 
-  if (!username || !password) return json({ error: 'Username and password required' }, 400);
-
-  const user = await db.prepare('SELECT * FROM users WHERE username = ?').bind(username.toLowerCase()).first() as Record<string, unknown> | null;
-  if (!user || !user.password_hash) return json({ error: 'Invalid username or password' }, 401);
-
-  const valid = await verifyPassword(password, user.password_hash as string);
-  if (!valid) return json({ error: 'Invalid username or password' }, 401);
+  // Find or create user by strava_id
+  let user = await db.prepare('SELECT id FROM users WHERE strava_id = ?').bind(stravaId).first() as Record<string, unknown> | null;
 
   const sessionToken = crypto.randomUUID();
   const sessionExpires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  await db.prepare('UPDATE users SET session_token = ?, session_expires = ? WHERE id = ?')
-    .bind(sessionToken, sessionExpires, user.id).run();
+  if (user) {
+    // Existing user — update tokens and session
+    await db.prepare(
+      'UPDATE users SET display_name = ?, strava_access_token = ?, strava_refresh_token = ?, strava_token_expires = ?, session_token = ?, session_expires = ? WHERE id = ?'
+    ).bind(displayName, tokenData.access_token, tokenData.refresh_token, tokenData.expires_at, sessionToken, sessionExpires, user.id).run();
+  } else {
+    // New user — create account
+    const userId = 'usr-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+    await db.prepare(
+      'INSERT INTO users (id, strava_id, display_name, strava_access_token, strava_refresh_token, strava_token_expires, session_token, session_expires) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(userId, stravaId, displayName, tokenData.access_token, tokenData.refresh_token, tokenData.expires_at, sessionToken, sessionExpires).run();
+  }
 
   const cookie = `turf_session=${sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`;
-  return jsonWithCookie({ userId: user.id, username: user.username, displayName: user.display_name }, cookie);
+  return new Response('<html><body><script>window.location="/";</script></body></html>', {
+    headers: {
+      'Content-Type': 'text/html',
+      'Set-Cookie': cookie,
+    },
+  });
 }
 
 async function logout(request: Request, env: Env): Promise<Response> {
@@ -185,6 +201,70 @@ async function logout(request: Request, env: Env): Promise<Response> {
   }
   const cookie = 'turf_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
   return jsonWithCookie({ success: true }, cookie);
+}
+
+// ==================== Strava Deauthorization ====================
+
+// Webhook: Strava calls this when a user revokes access from Strava's side
+async function stravaDeauthorize(env: Env, body: unknown): Promise<Response> {
+  const { object_type, aspect_type, owner_id } = body as {
+    object_type?: string; aspect_type?: string; owner_id?: number;
+  };
+
+  // Strava sends deauthorization as: object_type=athlete, aspect_type=update, authorized=false
+  if (object_type === 'athlete' && owner_id) {
+    const stravaId = String(owner_id);
+    await cleanupStravaData(env, stravaId);
+  }
+  return json({ success: true });
+}
+
+// GET webhook verification: Strava validates the subscription endpoint
+function stravaWebhookVerify(request: Request): Response {
+  const url = new URL(request.url);
+  const challenge = url.searchParams.get('hub.challenge');
+  if (challenge) return json({ 'hub.challenge': challenge });
+  return json({ error: 'Missing challenge' }, 400);
+}
+
+// User-initiated disconnect from Settings page
+async function stravaDisconnect(env: Env, userId: string, user: Record<string, unknown>): Promise<Response> {
+  // Revoke token on Strava's side
+  const accessToken = user.strava_access_token as string | null;
+  if (accessToken) {
+    await fetch('https://www.strava.com/oauth/deauthorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `access_token=${accessToken}`,
+    }).catch(() => {}); // Best-effort, don't fail if Strava is unreachable
+  }
+
+  // Clean up Strava data locally
+  const stravaId = user.strava_id as string | null;
+  if (stravaId) {
+    await cleanupStravaData(env, stravaId);
+  }
+
+  const cookie = 'turf_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+  return jsonWithCookie({ success: true, disconnected: true }, cookie);
+}
+
+// Shared cleanup: remove all Strava-sourced data, keep game data
+async function cleanupStravaData(env: Env, stravaId: string): Promise<void> {
+  const db = env.DB;
+  const user = await db.prepare('SELECT id FROM users WHERE strava_id = ?').bind(stravaId).first();
+  if (!user) return;
+
+  await db.batch([
+    // Clear Strava data and session from user record
+    db.prepare(
+      'UPDATE users SET strava_id = NULL, strava_access_token = NULL, strava_refresh_token = NULL, strava_token_expires = NULL, display_name = \'Runner\', session_token = NULL, session_expires = NULL WHERE id = ?'
+    ).bind(user.id),
+    // Clear strava_activity_id references from runs (keep the run records for game history)
+    db.prepare(
+      'UPDATE runs SET strava_activity_id = NULL WHERE user_id = ?'
+    ).bind(user.id),
+  ]);
 }
 
 // ==================== GET /api/me ====================
@@ -198,8 +278,8 @@ async function getMe(env: Env, user: Record<string, unknown>): Promise<Response>
   return json({
     user: {
       id: user.id,
-      username: user.username,
       displayName: user.display_name,
+      stravaId: user.strava_id,
       color: user.color,
       groupId: user.group_id,
       rpLifetime: user.rp_lifetime,

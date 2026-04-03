@@ -7,6 +7,8 @@ declare namespace Cloudflare {
 	}
 	interface Env {
 		DB: D1Database;
+		STRAVA_CLIENT_ID: string;
+		STRAVA_CLIENT_SECRET: string;
 	}
 }
 interface Env extends Cloudflare.Env {}

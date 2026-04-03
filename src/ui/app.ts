@@ -12,7 +12,7 @@ export function getAppHtml(): string {
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" />
-  <title>Turf</title>
+  <title>Turf Runner</title>
   <style>${getStyles()}</style>
 </head>
 <body>
@@ -21,37 +21,28 @@ export function getAppHtml(): string {
     <!-- Auth Screen (shown when not logged in) -->
     <div id="auth-screen" class="auth-screen" style="display:none">
       <div class="auth-card">
-        <div class="auth-logo">TURF</div>
+        <div class="auth-logo">TURF RUNNER</div>
         <div class="auth-tagline">Claim your territory</div>
 
-        <!-- Login Form -->
-        <div id="auth-login" class="auth-form">
-          <input type="text" id="login-username" class="auth-input" placeholder="Username" autocomplete="username" autocapitalize="off" />
-          <input type="password" id="login-password" class="auth-input" placeholder="Password" autocomplete="current-password" />
-          <button id="login-btn" class="auth-btn primary">Login</button>
+        <!-- Strava Login -->
+        <div class="auth-form">
+          <a href="/api/auth/strava" class="auth-btn primary strava-btn" id="strava-login-btn">
+            <svg class="strava-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+            Continue with Strava
+          </a>
           <div id="login-error" class="auth-error"></div>
-          <div class="auth-switch">Don't have an account? <a href="#" id="show-register">Sign up</a></div>
-        </div>
-
-        <!-- Register Form -->
-        <div id="auth-register" class="auth-form" style="display:none">
-          <input type="text" id="register-username" class="auth-input" placeholder="Username" autocomplete="username" autocapitalize="off" />
-          <input type="text" id="register-display" class="auth-input" placeholder="Display name (optional)" autocomplete="name" />
-          <input type="password" id="register-password" class="auth-input" placeholder="Password (6+ chars)" autocomplete="new-password" />
-          <button id="register-btn" class="auth-btn primary">Create Account</button>
-          <div id="register-error" class="auth-error"></div>
-          <div class="auth-switch">Already have an account? <a href="#" id="show-login">Login</a></div>
         </div>
 
         <div class="auth-explore">
-          <button id="auth-explore-btn" class="auth-btn secondary">Explore Map without Account</button>
+          <button id="auth-explore-btn" class="auth-btn secondary">Explore Map as Guest</button>
         </div>
+        <div class="auth-privacy"><a href="/privacy" target="_blank">Privacy Policy</a></div>
       </div>
     </div>
 
     <!-- Header -->
     <header class="app-header" id="app-header" style="display:none">
-      <div class="logo">TURF</div>
+      <div class="logo">TURF RUNNER</div>
       <div class="header-actions">
         <div class="profile-dropdown-wrap" id="profile-dropdown-wrap">
           <button class="header-btn profile-icon-btn" id="profile-icon-btn" aria-label="Profile">
@@ -357,19 +348,19 @@ export function getAppHtml(): string {
         <div class="settings-group">
           <div class="settings-item">
             <div class="settings-left">
-              <div class="settings-icon">�</div>
-              <div class="settings-text">
-                <div class="settings-name">Username</div>
-                <div class="settings-desc" id="settings-username">—</div>
-              </div>
-            </div>
-          </div>
-          <div class="settings-item">
-            <div class="settings-left">
               <div class="settings-icon">🔗</div>
               <div class="settings-text">
                 <div class="settings-name">Strava Account</div>
-                <div class="settings-desc" id="settings-strava">Not linked (coming soon)</div>
+                <div class="settings-desc" id="settings-strava">Linked</div>
+              </div>
+            </div>
+          </div>
+          <div class="settings-item settings-item-btn" id="strava-disconnect-btn">
+            <div class="settings-left">
+              <div class="settings-icon">⛓️‍💥</div>
+              <div class="settings-text">
+                <div class="settings-name settings-danger">Disconnect Strava</div>
+                <div class="settings-desc">Removes Strava data. Game progress is kept.</div>
               </div>
             </div>
           </div>
@@ -395,6 +386,13 @@ export function getAppHtml(): string {
               </div>
             </div>
           </div>
+        </div>
+        <div class="strava-attribution">
+          <span>Powered by</span>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="#FC4C02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+          <span>Strava</span>
+          <span>·</span>
+          <a href="/privacy" target="_blank" style="color:#8a8a96;font-size:12px;">Privacy Policy</a>
         </div>
       </div>
 

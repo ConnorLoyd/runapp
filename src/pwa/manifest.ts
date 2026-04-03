@@ -1,7 +1,7 @@
 export function getManifest(): string {
   return JSON.stringify({
-    name: "Turf — Territory Running Game",
-    short_name: "Turf",
+    name: "Turf Runner — Territory Running Game",
+    short_name: "Turf Runner",
     description: "A social running game where you and your people fight for the places you actually run.",
     start_url: "/",
     display: "standalone",
