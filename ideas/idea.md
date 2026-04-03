@@ -257,19 +257,28 @@ Ownership model:
 
 Single unified currency for everything:
 
-- **1 RP per cell** traversed during a run (skills can multiply this)
-- RP goes to the cell (territory control) AND adds to your **Lifetime RP**
-- **Lifetime RP** = total RP earned from all runs (only goes up, shown on profile, equals your total map investment)
+- **1 RP per cell** traversed during a run
+- Each cell you run through: **1 RP placed on the map** (territory control) AND **1 RP earned** (spendable on skills)
+- Skills can add **bonus RP** — extra map RP (Strike Force, Shield, Dice Roll) or extra earned RP (Trailblazer)
+- **Lifetime RP** = total RP earned from all runs (only goes up, shown on profile)
 - **Available RP** = Lifetime RP minus RP spent on skills (your spendable balance)
 - Spending RP on skill upgrades reduces Available RP but **never** reduces your map presence or Lifetime RP
-- Whether you're attacking (enemy cell) or defending (your cell), the RP mechanics are the same
+
+### Run Result Breakdown
+
+After each run, players see a detailed breakdown:
+
+- **Base RP** — cells traversed × 1 (earned + placed on map)
+- **Skill bonus** — any bonus RP from equipped skill (map bonus or earned bonus)
+- **Cells captured** — how many cells you flipped ownership on
+- **Totals** — total map RP placed and total RP earned
 
 ### Example
 
-- Run through 20 cells → 20 RP earned (Lifetime: 20, Available: 20)
+- Run through 20 cells → Base: 20 RP (map + earned) → Totals: 20 map, 20 earned
 - Spend 5 RP on a skill upgrade → (Lifetime: 20, Available: 15)
-- Run through 15 more cells → (Lifetime: 35, Available: 30)
-- Your 35 RP on the map stays exactly where you put it
+- Run through 15 cells with Strike Force Lv2 in enemy territory → Base: 15 RP, Skill bonus: +15 map RP → Totals: 30 map, 15 earned
+- Run through 10 unclaimed cells with Trailblazer Lv2 → Base: 10 RP, Skill bonus: +10 earned RP → Totals: 10 map, 20 earned
 
 ---
 
@@ -278,26 +287,32 @@ Single unified currency for everything:
 ### How Skills Work
 
 - Every player has **one skill slot**
-- **Only 1 skill equipped** at a time — the active skill applies on every run
+- **Only 1 skill equipped** at a time — the active skill applies when runs are synced from Strava
 - Players can upgrade any skill using RP from their personal balance
-- Upgraded skills become more effective (wider radius, more RP, stronger effects)
+- Upgraded skills become more effective (wider radius, more bonus RP, stronger effects)
+- **Important**: the equipped skill applies at sync time (when the activity is processed), not when you physically run. Players should equip their desired skill before their run uploads.
 
 ### Skills
 
 - **Wide Scan** — Reveals adjacent H3 cells as you run, expanding fog reveal beyond just the cells you pass through
-  - Lv1: 1 ring | Lv2: 1 ring + 25% chance of 2nd ring | Lv3: 2 rings | Lv4: 2 rings + 25% chance of 3rd | Lv5: 3 rings
+  - Lv1: 1 ring | Lv2: 1 ring | Lv3: 2 rings | Lv4: 2 rings | Lv5: 3 rings
 
-- **Strike Force** — Your RP counts for more in enemy-owned cells (attack bonus, doesn't boost friendly territory)
-  - Lv1: 1.5x RP in enemy cells | Lv2: 1.75x | Lv3: 2x | Lv4: 2.5x | Lv5: 3x
+- **Strike Force** — Adds bonus RP to enemy-owned cells you run through (doesn't increase earned RP)
+  - Lv1: — | Lv2: +1/cell | Lv3: +1/cell | Lv4: +1/cell | Lv5: +2/cell bonus map RP
 
-- **Shield** — Your runs in friendly-owned cells add bonus RP, reinforcing territory
-  - Lv1: +0.5 bonus RP per cell | Lv2: +1 | Lv3: +1.5 | Lv4: +2 | Lv5: +2.5
+- **Shield** — Adds bonus RP to your own cells you run through (doesn't increase earned RP)
+  - Lv1: — | Lv2: +1/cell | Lv3: +1/cell | Lv4: +1/cell | Lv5: +2/cell bonus map RP
 
-- **Trailblazer** — Earn bonus RP when running through unclaimed or newly discovered cells
-  - Lv1: +1 bonus RP per new cell | Lv2: +1.5 | Lv3: +2 | Lv4: +2.5 | Lv5: +3
+- **Trailblazer** — Earn bonus RP when running through unclaimed cells (doesn't boost map RP)
+  - Lv1: — | Lv2: +1/cell | Lv3: +1/cell | Lv4: +1/cell | Lv5: +2/cell bonus earned RP
 
-- **Ghost Run** — Enemy players/groups don't see your activity in their territory
-  - Lv1: 50% stealth chance | Lv2: 65% | Lv3: 80% | Lv4: 90% | Lv5: 100% stealth
+- **Dice Roll** — Chance to flip enemy cells outright when running through them. Chance decreases with larger RP gaps.
+  - Flip chance formula: `levelFactor / (1 + gap × 0.15)` where gap = enemy RP − your RP
+  - Lv1: 0.3 factor | Lv2: 0.4 | Lv3: 0.5 | Lv4: 0.65 | Lv5: 0.8
+  - On success: places enough RP to take the cell by 1
+  - Example: enemy has 10 RP, you have 1 RP → gap of 9 → Lv3 chance ≈ 22%. If lucky, you gain 10 RP on that cell.
+  - Close contests (gap ≤ 3): 15-50% chance depending on level
+  - Large gaps (50+): < 6% even at max level
 
 ### Skill Upgrades
 
@@ -358,7 +373,7 @@ This works because runners already:
 - Fog of war unlocked by running (muted map with colors visible, detail on discovery)
 - Shared map knowledge (group fog sharing)
 - Solo runs with skill system
-- 1 RP per cell per runner, instant ownership flip
+- 1 base RP per cell per runner (map RP and earned RP, skills can modify each independently)
 - 3-phase zones (Hidden → Unclaimed → Owned)
 - Anti-farming rules (once per cell per runner per run)
 - 0.5 mile minimum run distance
@@ -491,7 +506,7 @@ Design principles: sparse storage (only store active data), minimal columns, int
 | `strike_force_level` | INTEGER DEFAULT 0 | Level 0–5 |
 | `shield_level` | INTEGER DEFAULT 0 | Level 0–5 |
 | `trailblazer_level` | INTEGER DEFAULT 0 | Level 0–5 |
-| `ghost_run_level` | INTEGER DEFAULT 0 | Level 0–5 |
+| `ghost_run_level` | INTEGER DEFAULT 0 | Level 0–5 (now used for Dice Roll skill) |
 | `session_token` | TEXT UNIQUE nullable | Active session token |
 | `session_expires` | TEXT nullable | Session expiry (ISO 8601) |
 | `created_at` | TEXT | ISO 8601 timestamp |

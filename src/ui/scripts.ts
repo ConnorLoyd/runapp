@@ -7,49 +7,52 @@ export function getScripts(): string {
   var DEFAULT_ZOOM = 15;
   var LEVEL_COSTS = [5, 15, 30, 50, 80];
   var SKILL_ICONS = {
-    'wide-scan': '\\u{1F52D}', 'strike-force': '\\u{1F4A5}', 'shield': '\\u{1F6E1}\\uFE0F',
-    'trailblazer': '\\u{1F3C3}', 'ghost-run': '\\u{1F47B}'
+    'wide-scan': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M12 18H12.01"/><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/><path d="m13.41 10.59 5.66-5.66"/></svg>',
+    'strike-force': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" x2="9" y1="14" y2="18"/><line x1="7" x2="4" y1="17" y2="20"/><line x1="3" x2="5" y1="19" y2="21"/></svg>',
+    'shield': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>',
+    'trailblazer': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>',
+    'dice-roll': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="12" height="12" x="2" y="10" rx="2" ry="2"/><path d="m17.92 14 3.5-3.5a2.24 2.24 0 0 0 0-3l-5-4.92a2.24 2.24 0 0 0-3 0L10 6"/><path d="M6 18h.01"/><path d="M10 14h.01"/><path d="M15 6h.01"/><path d="M18 9h.01"/></svg>'
   };
   var SKILL_NAMES = {
     'wide-scan': 'Wide Scan', 'strike-force': 'Strike Force', 'shield': 'Shield',
-    'trailblazer': 'Trailblazer', 'ghost-run': 'Ghost Run'
+    'trailblazer': 'Trailblazer', 'dice-roll': 'Dice Roll'
   };
   var SKILL_DESCS = {
     'wide-scan': 'Reveals adjacent cells as you run, expanding fog reveal.',
-    'strike-force': 'Your RP counts for more in enemy-owned cells.',
-    'shield': 'Bonus RP in friendly-owned cells, reinforcing territory.',
-    'trailblazer': 'Earn bonus RP in unclaimed or newly discovered cells.',
-    'ghost-run': 'Enemy players don\\u2019t see your activity in their territory.'
+    'strike-force': 'Places more RP on enemy cells (territory strength, not earned RP).',
+    'shield': 'Places more RP on your own cells (territory strength, not earned RP).',
+    'trailblazer': 'Earn more spendable RP in unclaimed cells (doesn\\u2019t boost territory).',
+    'dice-roll': 'Chance to flip enemy cells outright. Lower chance with bigger RP gaps.'
   };
   var SKILL_STATS = {
     'wide-scan': {
       label: 'Reveal Range',
       values: ['None', '1 ring', '1 ring', '2 rings', '2 rings', '3 rings'],
-      bonus:  ['',     '',       '',       '25% chance +1', '', '25% chance +1'],
+      bonus:  ['',     '',       '',       '',         '',         ''],
       unit: ''
     },
     'strike-force': {
-      label: 'Enemy Cell Multiplier',
-      values: ['1x', '1.5x', '1.75x', '2x', '2.5x', '3x'],
-      bonus:  ['',   '',     '',       '',   '',     ''],
-      unit: ' RP/cell'
+      label: 'Bonus RP on Enemy Cells',
+      values: ['None', 'None', '+1/cell', '+1/cell', '+1/cell', '+2/cell'],
+      bonus:  ['',   '',   '',   '',   '',   ''],
+      unit: ''
     },
     'shield': {
-      label: 'Friendly Cell Bonus',
-      values: ['+0', '+0.5', '+1', '+1.5', '+2', '+2.5'],
-      bonus:  ['',   '',     '',   '',     '',   ''],
-      unit: ' RP/cell'
+      label: 'Bonus RP on Friendly Cells',
+      values: ['None', 'None', '+1/cell', '+1/cell', '+1/cell', '+2/cell'],
+      bonus:  ['',   '',   '',   '',   '',   ''],
+      unit: ''
     },
     'trailblazer': {
-      label: 'Unclaimed Cell Bonus',
-      values: ['+0', '+1', '+1.5', '+2', '+2.5', '+3'],
-      bonus:  ['',   '',   '',     '',   '',     ''],
-      unit: ' RP/cell'
+      label: 'Bonus RP on Unclaimed Cells',
+      values: ['None', 'None', '+1/cell', '+1/cell', '+1/cell', '+2/cell'],
+      bonus:  ['',   '',   '',   '',   '',   ''],
+      unit: ''
     },
-    'ghost-run': {
-      label: 'Stealth',
-      values: ['Off', 'Active', 'Active', 'Active', 'Active', 'Active'],
-      bonus:  ['', 'Runs hidden from enemies', 'Runs hidden from enemies', 'Runs hidden from enemies', 'Runs hidden from enemies', 'Runs hidden from enemies'],
+    'dice-roll': {
+      label: 'Flip Chance Factor',
+      values: ['Off', '0.3', '0.4', '0.5', '0.65', '0.8'],
+      bonus:  ['', 'Chance decreases with RP gap', 'Chance decreases with RP gap', 'Chance decreases with RP gap', 'Chance decreases with RP gap', 'Chance decreases with RP gap'],
       unit: ''
     }
   };
@@ -64,6 +67,136 @@ export function getScripts(): string {
   function apiPost(url, body) {
     return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin' })
       .then(function(r) { return r.json(); });
+  }
+
+  // ========== Polyline Decoder (Google Encoded Polyline Algorithm) ==========
+  function decodePolyline(encoded) {
+    var points = [];
+    var index = 0, lat = 0, lng = 0;
+    while (index < encoded.length) {
+      var b, shift = 0, result = 0;
+      do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lat += ((result & 1) ? ~(result >> 1) : (result >> 1));
+      shift = 0; result = 0;
+      do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lng += ((result & 1) ? ~(result >> 1) : (result >> 1));
+      points.push([lat * 1e-5, lng * 1e-5]);
+    }
+    return points;
+  }
+
+  function polylineToH3Cells(polyline) {
+    if (!polyline || typeof h3 === 'undefined') return [];
+    var points = decodePolyline(polyline);
+    var cellSet = {};
+    for (var i = 0; i < points.length; i++) {
+      var cell = h3.geoToH3(points[i][0], points[i][1], H3_RES);
+      cellSet[cell] = true;
+    }
+    // Also interpolate between consecutive points to avoid gaps in sparse polylines
+    for (var i = 0; i < points.length - 1; i++) {
+      var p1 = points[i], p2 = points[i + 1];
+      var dist = Math.sqrt(Math.pow(p2[0] - p1[0], 2) + Math.pow(p2[1] - p1[1], 2));
+      // ~0.0016 degrees is roughly 174m (one H3 res9 edge), interpolate if gap is larger
+      if (dist > 0.001) {
+        var steps = Math.ceil(dist / 0.0008);
+        for (var s = 1; s < steps; s++) {
+          var frac = s / steps;
+          var lat = p1[0] + (p2[0] - p1[0]) * frac;
+          var lng = p1[1] + (p2[1] - p1[1]) * frac;
+          var cell = h3.geoToH3(lat, lng, H3_RES);
+          cellSet[cell] = true;
+        }
+      }
+    }
+    return Object.keys(cellSet);
+  }
+
+  // ========== Strava Sync ==========
+  var syncInProgress = false;
+
+  function showSyncToast(message, type) {
+    var existing = document.getElementById('sync-toast');
+    if (existing) existing.remove();
+    var toast = document.createElement('div');
+    toast.id = 'sync-toast';
+    toast.className = 'sync-toast ' + (type || 'info');
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(function() { toast.classList.add('visible'); }, 10);
+    setTimeout(function() {
+      toast.classList.remove('visible');
+      setTimeout(function() { toast.remove(); }, 300);
+    }, 4000);
+  }
+
+  function computeRevealCells(cells) {
+    if (typeof h3 === 'undefined' || !currentUser) return cells.slice();
+    var u = currentUser.user;
+    var revealRings = 0;
+    if (u.equippedSkill === 'wide-scan') {
+      var lvl = u.skills['wide-scan'] || 0;
+      revealRings = [0, 1, 1, 2, 2, 3][lvl] || 0;
+    }
+    var allRevealed = {};
+    for (var i = 0; i < cells.length; i++) {
+      allRevealed[cells[i]] = true;
+      if (revealRings > 0) {
+        var ring = h3.kRing(cells[i], revealRings);
+        for (var j = 0; j < ring.length; j++) allRevealed[ring[j]] = true;
+      }
+    }
+    return Object.keys(allRevealed);
+  }
+
+  function processStravaActivity(activity) {
+    if (!activity.polyline) return Promise.resolve(null);
+    var cells = polylineToH3Cells(activity.polyline);
+    if (cells.length === 0) return Promise.resolve(null);
+    var revealedCells = computeRevealCells(cells);
+    return apiPost('/api/runs', {
+      cells: cells,
+      revealedCells: revealedCells,
+      stravaActivityId: activity.id,
+    }).then(function(res) {
+      if (res.duplicate) return null;
+      if (res.error) { console.error('Import failed:', activity.name, res.error); return null; }
+      return res;
+    });
+  }
+
+  function syncStravaActivities() {
+    if (syncInProgress || !currentUser || !currentUser.user.stravaLinked) return Promise.resolve();
+    syncInProgress = true;
+    return apiGet('/api/strava/sync').then(function(data) {
+      if (!data.activities || data.activities.length === 0) {
+        syncInProgress = false;
+        return;
+      }
+      var skillName = currentUser && currentUser.user.equippedSkill ? SKILL_NAMES[currentUser.user.equippedSkill] : null;
+      var skillMsg = skillName ? ' (' + skillName + ' active)' : '';
+      showSyncToast('Importing ' + data.activities.length + ' run' + (data.activities.length > 1 ? 's' : '') + ' from Strava...' + skillMsg, 'info');
+      var imported = 0;
+      var chain = Promise.resolve();
+      data.activities.forEach(function(activity) {
+        chain = chain.then(function() {
+          return processStravaActivity(activity).then(function(res) {
+            if (res) imported++;
+          });
+        });
+      });
+      return chain.then(function() {
+        syncInProgress = false;
+        if (imported > 0) {
+          showSyncToast('Imported ' + imported + ' run' + (imported > 1 ? 's' : '') + ' from Strava!', 'success');
+          loadTerritory().then(function() { if (turfMap) renderHexGrid(); updateMapOverlayStats(); });
+          loadUserData();
+        }
+      });
+    }).catch(function(err) {
+      syncInProgress = false;
+      console.error('Strava sync error:', err);
+    });
   }
 
   // ========== Navigation ==========
@@ -107,47 +240,48 @@ export function getScripts(): string {
     var list = document.getElementById('skill-list');
     if (!list || !currentUser) return;
     var u = currentUser.user;
-    var skills = ['wide-scan', 'strike-force', 'shield', 'trailblazer', 'ghost-run'];
+    var skills = ['wide-scan', 'strike-force', 'shield', 'trailblazer', 'dice-roll'];
     var html = '';
     skills.forEach(function(id) {
       var level = u.skills[id] || 0;
       var isEquipped = u.equippedSkill === id;
-      var pips = '';
+      var segs = '';
       for (var i = 0; i < 5; i++) {
-        pips += '<div class="skill-level-pip' + (i < level ? ' filled' : '') + '"></div>';
+        segs += '<div class="skill-level-seg' + (i < level ? ' filled' : '') + '"></div>';
       }
       var costHtml = '';
       if (level >= 5) costHtml = '<span class="skill-max">MAX</span>';
-      else costHtml = '<button class="skill-upgrade-btn" data-skill="' + id + '" data-cost="' + LEVEL_COSTS[level] + '">\\u2B06 ' + LEVEL_COSTS[level] + ' RP</button>';
+      else costHtml = '<button class="skill-upgrade-btn" data-skill="' + id + '" data-cost="' + LEVEL_COSTS[level] + '">Upgrade · ' + LEVEL_COSTS[level] + ' RP</button>';
 
-      // Current stat line
+      // Build description with integrated stat value
       var stats = SKILL_STATS[id];
       var currentVal = stats.values[level] || '—';
-      var currentBonus = stats.bonus[level] || '';
-      var statHtml = '<div class="skill-stat-current"><span class="stat-label">' + stats.label + ':</span> <span class="stat-value">' + currentVal + stats.unit + '</span>';
-      if (currentBonus) statHtml += ' <span class="stat-bonus">(' + currentBonus + ')</span>';
-      statHtml += '</div>';
-
-      // Next level preview
-      var nextHtml = '';
-      if (level < 5) {
-        var nextVal = stats.values[level + 1] || '—';
-        var nextBonus = stats.bonus[level + 1] || '';
-        nextHtml = '<div class="skill-stat-next"><span class="stat-next-label">Next (Lv ' + (level + 1) + '):</span> <span class="stat-next-value">' + nextVal + stats.unit + '</span>';
-        if (nextBonus) nextHtml += ' <span class="stat-bonus">(' + nextBonus + ')</span>';
-        nextHtml += '</div>';
+      var v = '<span class="skill-val">';
+      var ve = '</span>';
+      var descHtml;
+      if (id === 'wide-scan') {
+        descHtml = currentVal !== 'None' ? 'Reveals fog in a ' + v + currentVal + ve + ' radius around your path' : 'Expands fog reveal beyond cells you pass through';
+      } else if (id === 'strike-force') {
+        descHtml = currentVal !== 'None' ? 'Adds ' + v + currentVal + ve + ' bonus RP to enemy cells you run through' : 'Places bonus RP on enemy cells you run through';
+      } else if (id === 'shield') {
+        descHtml = currentVal !== 'None' ? 'Adds ' + v + currentVal + ve + ' bonus RP to your cells you run through' : 'Places bonus RP on your own cells you run through';
+      } else if (id === 'trailblazer') {
+        descHtml = currentVal !== 'None' ? 'Earns ' + v + currentVal + ve + ' bonus spendable RP in unclaimed cells' : 'Earns bonus RP when running through unclaimed cells';
+      } else if (id === 'dice-roll') {
+        descHtml = currentVal !== 'Off' ? v + currentVal + ve + ' chance factor to flip enemy cells. Lower odds with bigger RP gaps' : 'Chance to flip enemy cells outright when running through them';
+      } else {
+        descHtml = SKILL_DESCS[id];
       }
 
       html += '<div class="skill-card' + (isEquipped ? ' equipped' : '') + '" data-skill="' + id + '">'
         + '<div class="skill-top">'
         + '<div class="skill-icon">' + (SKILL_ICONS[id] || '') + '</div>'
         + '<div class="skill-info"><div class="skill-name">' + SKILL_NAMES[id] + '</div>'
-        + '<div class="skill-desc">' + SKILL_DESCS[id] + '</div></div>'
+        + '<div class="skill-desc">' + descHtml + '</div></div>'
         + (isEquipped ? '<span class="equipped-badge">Equipped</span>' : '')
         + '</div>'
-        + '<div class="skill-stats">' + statHtml + nextHtml + '</div>'
         + '<div class="skill-bottom">'
-        + '<div class="skill-level-bar">' + pips + '<span class="skill-level-label">Lv ' + level + '</span></div>'
+        + '<div class="skill-level-bar">' + segs + '<span class="skill-level-label">Lv ' + level + '</span></div>'
         + '<div class="skill-actions">' + costHtml + '</div>'
         + '</div></div>';
     });
@@ -232,11 +366,12 @@ export function getScripts(): string {
         data.members.forEach(function(m) {
           var skillName = m.equippedSkill ? SKILL_NAMES[m.equippedSkill] || m.equippedSkill : 'None';
           var skillIcon = m.equippedSkill ? (SKILL_ICONS[m.equippedSkill] || '') : '';
+          var skillDetailHtml = skillIcon ? '<span class="member-skill-icon">' + skillIcon + '</span> ' + skillName : skillName;
           html += '<div class="member-row">'
             + '<div class="member-avatar" style="border-color:' + m.color + '">' + (m.displayName || '?').charAt(0) + '</div>'
             + '<div class="member-info">'
             + '<div class="member-name">' + m.displayName + (m.id === g.ownerId ? ' <span class="member-role">Owner</span>' : '') + '</div>'
-            + '<div class="member-detail">' + skillIcon + ' ' + skillName + '</div>'
+            + '<div class="member-detail">' + skillDetailHtml + '</div>'
             + '</div>'
             + '<div class="member-rp">' + m.rpLifetime + ' RP</div>'
             + '</div>';
@@ -360,15 +495,19 @@ export function getScripts(): string {
     var eqIcon = document.getElementById('eq-icon');
     var eqName = document.getElementById('eq-name');
     var eqLevel = document.getElementById('eq-level');
-    if (eqIcon) eqIcon.textContent = u.equippedSkill ? (SKILL_ICONS[u.equippedSkill] || '') : '\\u2014';
+    if (eqIcon) eqIcon.innerHTML = u.equippedSkill ? (SKILL_ICONS[u.equippedSkill] || '') : '';
     if (eqName) eqName.textContent = u.equippedSkill ? (SKILL_NAMES[u.equippedSkill] || u.equippedSkill) : 'None';
     if (eqLevel) eqLevel.textContent = u.equippedSkill ? 'Level ' + (u.skills[u.equippedSkill] || 0) : '';
+    var profileAvatar = document.getElementById('profile-avatar');
+    if (profileAvatar) profileAvatar.textContent = (u.displayName || '?').charAt(0);
     var lifetimeEl = document.getElementById('stat-lifetime-rp');
     if (lifetimeEl) lifetimeEl.textContent = u.rpLifetime;
     var availableEl = document.getElementById('stat-available-rp');
     if (availableEl) availableEl.textContent = Math.floor(u.rpAvailable);
-    var colorEl = document.getElementById('settings-color');
-    if (colorEl) colorEl.textContent = u.color;
+    var soloColorSection = document.getElementById('solo-color-section');
+    if (soloColorSection) soloColorSection.style.display = currentUser.group ? 'none' : 'block';
+    var colorDescEl = document.getElementById('profile-color-desc');
+    if (colorDescEl) colorDescEl.textContent = u.color;
     var colorPicker = document.getElementById('user-color-picker');
     if (colorPicker) colorPicker.value = u.color;
   }
@@ -501,28 +640,7 @@ export function getScripts(): string {
       runSubmitBtn.textContent = 'Submitting...';
       runSubmitBtn.disabled = true;
 
-      // Compute fog reveal from Wide Scan
-      var revealedCells = [];
-      if (typeof h3 !== 'undefined' && currentUser) {
-        var u = currentUser.user;
-        var revealRings = 0;
-        if (u.equippedSkill === 'wide-scan') {
-          var lvl = u.skills['wide-scan'] || 0;
-          revealRings = [0, 1, 1, 2, 2, 3][lvl] || 0;
-          var extra = [0, 0, 0.25, 0, 0.25, 0][lvl] || 0;
-          if (extra > 0 && Math.random() < extra) revealRings++;
-        }
-        if (revealRings > 0) {
-          var revealSet = {};
-          runSelectedCells.forEach(function(cell) {
-            h3.kRing(cell, revealRings).forEach(function(c) { revealSet[c] = true; });
-          });
-          revealedCells = Object.keys(revealSet);
-        }
-      }
-
-      var allRevealed = runSelectedCells.slice();
-      revealedCells.forEach(function(c) { if (allRevealed.indexOf(c) < 0) allRevealed.push(c); });
+      var allRevealed = computeRevealCells(runSelectedCells);
 
       apiPost('/api/runs', { cells: runSelectedCells, revealedCells: allRevealed }).then(function(res) {
         closeRunMap();
@@ -544,11 +662,48 @@ export function getScripts(): string {
   function showRunResult(res) {
     var body = document.getElementById('run-result-body');
     if (!body) return;
-    body.innerHTML = '<div class="run-result-grid">'
+    var baseRp = res.cellsCount;
+    var mapRp = res.mapRpPlaced || baseRp;
+    var earnedRp = res.rpEarned;
+    var mapBonus = mapRp - baseRp;
+    var earnBonus = earnedRp - baseRp;
+
+    // Summary row
+    var html = '<div class="run-result-grid">'
       + '<div class="run-result-stat"><div class="rr-value">' + res.cellsCount + '</div><div class="rr-label">Cells</div></div>'
       + '<div class="run-result-stat"><div class="rr-value green">' + res.cellsCaptured + '</div><div class="rr-label">Captured</div></div>'
-      + '<div class="run-result-stat"><div class="rr-value amber">+' + res.rpEarned + '</div><div class="rr-label">RP Earned</div></div>'
+      + '<div class="run-result-stat"><div class="rr-value amber">+' + earnedRp + '</div><div class="rr-label">RP Earned</div></div>'
       + '</div>';
+
+    // Breakdown section
+    html += '<div class="run-breakdown">';
+    html += '<div class="run-breakdown-title">Breakdown</div>';
+    html += '<div class="run-breakdown-row"><span>Base RP</span><span>' + baseRp + ' RP</span></div>';
+    html += '<div class="run-breakdown-sub">earned + placed on map for each cell</div>';
+    if (mapBonus > 0) {
+      var mIcon = SKILL_ICONS[res.skillApplied] || '';
+      var mName = SKILL_NAMES[res.skillApplied] || res.skillApplied;
+      html += '<div class="run-breakdown-row bonus"><span>' + mIcon + ' ' + mName + ' (Map)</span><span>+' + mapBonus + ' RP</span></div>';
+      html += '<div class="run-breakdown-sub">bonus RP placed on map cells</div>';
+    }
+    if (earnBonus > 0) {
+      var eIcon = SKILL_ICONS[res.skillApplied] || '';
+      var eName = SKILL_NAMES[res.skillApplied] || res.skillApplied;
+      html += '<div class="run-breakdown-row bonus"><span>' + eIcon + ' ' + eName + ' (Earned)</span><span>+' + earnBonus + ' RP</span></div>';
+      html += '<div class="run-breakdown-sub">bonus spendable RP earned</div>';
+    }
+    if (res.diceRollFlips) {
+      html += '<div class="run-breakdown-row dice"><span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><rect width="12" height="12" x="2" y="10" rx="2" ry="2"/><path d="m17.92 14 3.5-3.5a2.24 2.24 0 0 0 0-3l-5-4.92a2.24 2.24 0 0 0-3 0L10 6"/><path d="M6 18h.01"/><path d="M10 14h.01"/><path d="M15 6h.01"/><path d="M18 9h.01"/></svg> Dice Roll</span><span>' + res.diceRollFlips + ' cell' + (res.diceRollFlips > 1 ? 's' : '') + ' flipped</span></div>';
+    }
+    if (res.cellsCaptured > 0 && !res.diceRollFlips) {
+      html += '<div class="run-breakdown-row capture"><span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" x2="19" y1="19" y2="13"/><line x1="16" x2="20" y1="16" y2="20"/><line x1="19" x2="21" y1="21" y2="19"/></svg> Cells Captured</span><span>' + res.cellsCaptured + '</span></div>';
+    }
+    html += '<div class="run-breakdown-divider"></div>';
+    html += '<div class="run-breakdown-row total"><span>Total Map RP</span><span>' + mapRp + '</span></div>';
+    html += '<div class="run-breakdown-row total"><span>Total Earned RP</span><span>' + earnedRp + '</span></div>';
+    html += '</div>';
+
+    body.innerHTML = html;
     openModal('run-result-modal');
   }
 
@@ -899,7 +1054,7 @@ export function getScripts(): string {
         var barHtml = '<div class="hex-bar"><div class="hex-bar-fill" style="width:' + chalPct + '%;background:' + attackColor + '"></div><div class="hex-bar-fill" style="width:' + (100 - chalPct) + '%;background:' + defenseColor + '"></div></div>';
 
         var labelHtml = '<div class="hex-label">'
-          + (isYours ? '<div class="hex-own-badge">\\u2B50</div>' : '')
+          + (isYours ? '<div class="hex-own-badge"><svg viewBox="0 0 24 24" width="13" height="13" fill="#ffb830" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>' : '')
           + '<div class="hex-rp-main" style="color:' + defenseColor + '">' + Math.round(ownerRpVal) + '</div>';
         if (challengerRp > 0) {
           labelHtml += barHtml;
@@ -974,11 +1129,9 @@ export function getScripts(): string {
     if (header) header.innerHTML = originalHeaderHtml;
     // Re-bind dropdown events after restoring HTML
     bindProfileDropdown();
-    // Restore stats + add-run
+    // Restore stats
     var statsOverlay = document.querySelector('.map-overlay-stats');
     if (statsOverlay) statsOverlay.style.display = '';
-    var quickActions = document.querySelector('.map-quick-actions');
-    if (quickActions) quickActions.style.display = '';
   }
 
   function showUnauthMap() {
@@ -991,11 +1144,9 @@ export function getScripts(): string {
     pages.forEach(function(p) { p.classList.remove('active'); });
     var mapPage = document.getElementById('page-map');
     if (mapPage) mapPage.classList.add('active');
-    // Hide stats + add-run for unauth
+    // Hide stats for unauth
     var statsOverlay = document.querySelector('.map-overlay-stats');
     if (statsOverlay) statsOverlay.style.display = 'none';
-    var quickActions = document.querySelector('.map-quick-actions');
-    if (quickActions) quickActions.style.display = 'none';
     // Show a login button instead
     var header = document.getElementById('app-header');
     if (header) header.innerHTML = '<div class="logo">TURF RUNNER</div><div class="header-actions"><a href="/api/auth/strava" class="header-btn auth-login-link" id="header-login-btn">Login with Strava</a></div>';
@@ -1068,6 +1219,8 @@ export function getScripts(): string {
     if (currentUser) {
       showApp();
       initMap();
+      // Auto-sync Strava activities after initial load
+      syncStravaActivities();
     } else {
       showAuthScreen();
     }
@@ -1276,7 +1429,7 @@ export function getScripts(): string {
   var userColorPicker = document.getElementById('user-color-picker');
   if (userColorPicker) {
     userColorPicker.addEventListener('input', function() {
-      var desc = document.getElementById('settings-color');
+      var desc = document.getElementById('profile-color-desc');
       if (desc) desc.textContent = userColorPicker.value;
     });
     userColorPicker.addEventListener('change', function() {
@@ -1365,6 +1518,54 @@ export function getScripts(): string {
         devLogMsg('Database reset');
         loadTerritory().then(function() { renderHexGrid(); updateMapOverlayStats(); });
         loadUserData();
+      });
+    });
+
+    // Strava Activity Browser (dev only - shows ALL past activities, bypasses date filter)
+    var devStravaLoadBtn = document.getElementById('dev-strava-load-btn');
+    if (devStravaLoadBtn) devStravaLoadBtn.addEventListener('click', function() {
+      var listEl = document.getElementById('dev-strava-list');
+      if (!listEl) return;
+      devStravaLoadBtn.textContent = 'Loading...';
+      apiGet('/api/dev/strava/activities').then(function(data) {
+        devStravaLoadBtn.textContent = 'Load Activities';
+        if (data.error) { devLogMsg('Error: ' + data.error); listEl.innerHTML = '<div class="dev-strava-empty">Error: ' + data.error + '</div>'; return; }
+        if (!data.activities || data.activities.length === 0) { listEl.innerHTML = '<div class="dev-strava-empty">No activities found</div>'; return; }
+        listEl.innerHTML = '';
+        data.activities.forEach(function(a) {
+          var el = document.createElement('div');
+          el.className = 'dev-strava-item';
+          var distMi = (a.distance / 1609.34).toFixed(1);
+          var dateStr = new Date(a.startDate).toLocaleDateString();
+          var cellEst = a.polyline ? polylineToH3Cells(a.polyline).length : 0;
+          el.innerHTML = '<div class="dev-strava-info">'
+            + '<div class="dev-strava-name">' + a.name + '</div>'
+            + '<div class="dev-strava-meta">' + a.type + ' \\u00B7 ' + distMi + ' mi \\u00B7 ' + dateStr + ' \\u00B7 ~' + cellEst + ' cells</div>'
+            + '</div>'
+            + (a.imported
+              ? '<span class="dev-strava-badge imported">Imported</span>'
+              : '<button class="dev-btn small dev-strava-import-btn">Import</button>');
+          if (!a.imported) {
+            var btn = el.querySelector('.dev-strava-import-btn');
+            btn.addEventListener('click', function() {
+              btn.textContent = '...';
+              btn.disabled = true;
+              processStravaActivity(a).then(function(res) {
+                if (res) {
+                  btn.textContent = '\\u2713';
+                  btn.className = 'dev-strava-badge imported';
+                  devLogMsg('Imported: ' + a.name + ' (' + res.cellsCount + ' cells, +' + res.rpEarned + ' RP)');
+                  loadTerritory().then(function() { renderHexGrid(); updateMapOverlayStats(); });
+                  loadUserData();
+                } else {
+                  btn.textContent = 'Skip';
+                  btn.disabled = true;
+                }
+              });
+            });
+          }
+          listEl.appendChild(el);
+        });
       });
     });
   }

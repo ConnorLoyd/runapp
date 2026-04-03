@@ -7,7 +7,7 @@ const SKILLS: Record<string, { icon: string }> = {
   'strike-force': { icon: '💥' },
   'shield': { icon: '🛡️' },
   'trailblazer': { icon: '🏃' },
-  'ghost-run': { icon: '👻' },
+  'dice-roll': { icon: '🎲' },
 };
 
 const SKILL_COLS: Record<string, string> = {
@@ -15,7 +15,19 @@ const SKILL_COLS: Record<string, string> = {
   'strike-force': 'strike_force_level',
   'shield': 'shield_level',
   'trailblazer': 'trailblazer_level',
-  'ghost-run': 'ghost_run_level',
+  'dice-roll': 'ghost_run_level',  // reuses ghost_run_level column
+};
+
+// NPC metadata for territory display
+const NPC_METADATA: Record<string, { name: string; color: string }> = {
+  'npc-ironclad': { name: 'Ironclad Runners', color: '#6366f1' },
+  'npc-phantom': { name: 'Phantom Stride', color: '#a855f7' },
+  'npc-asphalt': { name: 'Asphalt Kings', color: '#ec4899' },
+  'npc-nightowl': { name: 'Night Owls', color: '#14b8a6' },
+  'npc-trailblaze': { name: 'Trailblazers', color: '#f97316' },
+  'npc-concrete': { name: 'Concrete Crew', color: '#64748b' },
+  'npc-summit': { name: 'Summit Chasers', color: '#eab308' },
+  'npc-stealth': { name: 'Stealth Pack', color: '#06b6d4' },
 };
 
 function json(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -58,6 +70,42 @@ async function getAuthUser(request: Request, env: Env): Promise<Record<string, u
   return user;
 }
 
+// Refresh Strava access token if expired
+async function refreshStravaToken(env: Env, userId: string, user: Record<string, unknown>): Promise<string | null> {
+  const expiresAt = user.strava_token_expires as number | null;
+  const accessToken = user.strava_access_token as string | null;
+  if (!accessToken) return null;
+
+  // Token still valid (with 60s buffer)
+  if (expiresAt && Date.now() / 1000 < expiresAt - 60) return accessToken;
+
+  const refreshToken = user.strava_refresh_token as string | null;
+  if (!refreshToken) return null;
+
+  const res = await fetch('https://www.strava.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: env.STRAVA_CLIENT_ID,
+      client_secret: env.STRAVA_CLIENT_SECRET,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+
+  if (!res.ok) return null;
+
+  const data = await res.json() as { access_token: string; refresh_token: string; expires_at: number };
+  await env.DB.prepare(
+    'UPDATE users SET strava_access_token = ?, strava_refresh_token = ?, strava_token_expires = ? WHERE id = ?'
+  ).bind(data.access_token, data.refresh_token, data.expires_at, userId).run();
+
+  return data.access_token;
+}
+
+const VALID_ACTIVITY_TYPES = ['Run', 'TrailRun', 'Walk', 'Hike'];
+const MIN_DISTANCE_METERS = 804.67; // 0.5 miles
+
 export async function handleApi(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -87,6 +135,7 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
       if (path === '/api/me') return await getMe(env, user);
       if (path === '/api/group') return await getGroup(env, userId);
       if (path === '/api/runs') return await getRuns(env, userId);
+      if (path === '/api/strava/sync') return await stravaSync(env, userId, user);
     }
     if (method === 'POST') {
       if (path === '/api/runs') return await submitRun(env, userId, user, await request.json());
@@ -103,9 +152,10 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
     }
 
     // Dev-only endpoints
-    if (isLocal(request) && method === 'POST') {
-      if (path === '/api/dev/give-rp') return await devGiveRp(env, userId, await request.json());
-      if (path === '/api/dev/reset-db') return await devResetDb(env);
+    if (isLocal(request)) {
+      if (method === 'GET' && path === '/api/dev/strava/activities') return await devStravaActivities(env, userId, user);
+      if (method === 'POST' && path === '/api/dev/give-rp') return await devGiveRp(env, userId, await request.json());
+      if (method === 'POST' && path === '/api/dev/reset-db') return await devResetDb(env);
     }
 
     return json({ error: 'Not found' }, 404);
@@ -172,16 +222,17 @@ async function stravaCallback(request: Request, env: Env): Promise<Response> {
   const sessionExpires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   if (user) {
-    // Existing user — update tokens and session
+    // Existing user — update tokens and session (don't change strava_connected_at)
     await db.prepare(
       'UPDATE users SET display_name = ?, strava_access_token = ?, strava_refresh_token = ?, strava_token_expires = ?, session_token = ?, session_expires = ? WHERE id = ?'
     ).bind(displayName, tokenData.access_token, tokenData.refresh_token, tokenData.expires_at, sessionToken, sessionExpires, user.id).run();
   } else {
-    // New user — create account
+    // New user — create account with strava_connected_at = now
+    // Only activities after this timestamp will be eligible for import
     const userId = 'usr-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
     await db.prepare(
-      'INSERT INTO users (id, strava_id, display_name, strava_access_token, strava_refresh_token, strava_token_expires, session_token, session_expires) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    ).bind(userId, stravaId, displayName, tokenData.access_token, tokenData.refresh_token, tokenData.expires_at, sessionToken, sessionExpires).run();
+      'INSERT INTO users (id, strava_id, display_name, strava_access_token, strava_refresh_token, strava_token_expires, session_token, session_expires, strava_connected_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(userId, stravaId, displayName, tokenData.access_token, tokenData.refresh_token, tokenData.expires_at, sessionToken, sessionExpires, new Date().toISOString()).run();
   }
 
   const cookie = `turf_session=${sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`;
@@ -215,6 +266,10 @@ async function stravaDeauthorize(env: Env, body: unknown): Promise<Response> {
   if (object_type === 'athlete' && owner_id) {
     const stravaId = String(owner_id);
     await cleanupStravaData(env, stravaId);
+  }
+  // Activity events (create/update/delete) — logged but processed on next client sync
+  if (object_type === 'activity') {
+    console.log(`Strava webhook: activity ${aspect_type} for owner ${owner_id}`);
   }
   return json({ success: true });
 }
@@ -292,7 +347,7 @@ async function getMe(env: Env, user: Record<string, unknown>): Promise<Response>
         'strike-force': user.strike_force_level,
         'shield': user.shield_level,
         'trailblazer': user.trailblazer_level,
-        'ghost-run': user.ghost_run_level,
+        'dice-roll': user.ghost_run_level,
       },
     },
     group: group ? {
@@ -338,6 +393,12 @@ async function getTerritory(request: Request, env: Env): Promise<Response> {
       const uRows = await db.prepare(`SELECT id, display_name, color FROM users WHERE id IN (${ph2})`).bind(...remaining).all();
       for (const u of uRows.results as Array<Record<string, unknown>>) {
         entities[u.id as string] = { name: u.display_name as string, color: u.color as string, type: 'player' };
+      }
+    }
+    // Resolve NPC entities (not in groups or users tables)
+    for (const id of arr) {
+      if (!entities[id] && NPC_METADATA[id]) {
+        entities[id] = { name: NPC_METADATA[id].name, color: NPC_METADATA[id].color, type: 'npc' };
       }
     }
   }
@@ -420,10 +481,12 @@ async function getRuns(env: Env, userId: string): Promise<Response> {
 
 async function getLeaderboard(env: Env): Promise<Response> {
   const db = env.DB;
+  // Exclude NPC entities from leaderboard — they exist for gameplay, not competition
   const rows = await db.prepare(`
     SELECT t1.entity_id, COUNT(*) as cells_owned
     FROM territory t1
-    WHERE NOT EXISTS (
+    WHERE t1.entity_id NOT LIKE 'npc-%'
+    AND NOT EXISTS (
       SELECT 1 FROM territory t2
       WHERE t2.h3_index = t1.h3_index AND t2.entity_id != t1.entity_id AND t2.rp > t1.rp
     )
@@ -451,9 +514,15 @@ async function getLeaderboard(env: Env): Promise<Response> {
 
 async function submitRun(env: Env, userId: string, user: Record<string, unknown>, body: unknown): Promise<Response> {
   const db = env.DB;
-  const { cells, revealedCells } = body as { cells: string[]; revealedCells?: string[] };
+  const { cells, revealedCells, stravaActivityId } = body as { cells: string[]; revealedCells?: string[]; stravaActivityId?: string };
 
   if (!cells || !Array.isArray(cells) || cells.length === 0) return json({ error: 'No cells provided' }, 400);
+
+  // Dedup by Strava activity ID
+  if (stravaActivityId) {
+    const existing = await db.prepare('SELECT id FROM runs WHERE strava_activity_id = ?').bind(stravaActivityId).first();
+    if (existing) return json({ error: 'Activity already imported', duplicate: true }, 409);
+  }
 
   const uniqueCells = [...new Set(cells)];
   const eid = entityId(user);
@@ -474,8 +543,13 @@ async function submitRun(env: Env, userId: string, user: Record<string, unknown>
 
   const statements: D1PreparedStatement[] = [];
   const runId = 'run-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
-  let totalRp = 0;
+  let totalMapRp = 0;
+  let totalPlayerRp = 0;
   let cellsCaptured = 0;
+  let diceRollFlips = 0;
+
+  // Dice Roll level factors: chance = levelFactor / (1 + gap * 0.15)
+  const DICE_ROLL_FACTORS = [0, 0.3, 0.4, 0.5, 0.65, 0.8];
 
   for (const cellId of uniqueCells) {
     const ce = existingRp[cellId] || {};
@@ -487,22 +561,38 @@ async function submitRun(env: Env, userId: string, user: Record<string, unknown>
     const isFriendly = ownerId === eid;
     const isUnclaimed = ownerId === null;
 
-    let cellRp = 1;
+    let mapRp = 1;     // RP placed on the territory cell
+    let playerRp = 1;  // RP earned by the player (spendable)
+
     if (skill && skillLevel > 0) {
-      if (skill === 'strike-force' && isEnemy) cellRp *= [1, 1.5, 1.75, 2, 2.5, 3][skillLevel] ?? 1;
-      if (skill === 'shield' && isFriendly) cellRp += [0, 0.5, 1, 1.5, 2, 2.5][skillLevel] ?? 0;
-      if (skill === 'trailblazer' && isUnclaimed) cellRp += [0, 1, 1.5, 2, 2.5, 3][skillLevel] ?? 0;
+      // Strike Force & Shield: boost MAP RP only (territory strength)
+      if (skill === 'strike-force' && isEnemy) mapRp *= [1, 1, 2, 2, 2, 3][skillLevel] ?? 1;
+      if (skill === 'shield' && isFriendly) mapRp *= [1, 1, 2, 2, 2, 3][skillLevel] ?? 1;
+      // Trailblazer: boost PLAYER RP only (spendable currency)
+      if (skill === 'trailblazer' && isUnclaimed) playerRp *= [1, 1, 2, 2, 2, 3][skillLevel] ?? 1;
+      // Dice Roll: chance to flip enemy cells
+      if (skill === 'dice-roll' && isEnemy) {
+        const myCurrentRp = (ce[eid] || 0) + mapRp;
+        const gap = ownerRp - myCurrentRp;
+        if (gap > 0) {
+          const chance = DICE_ROLL_FACTORS[skillLevel] / (1 + gap * 0.15);
+          if (Math.random() < chance) {
+            mapRp += gap + 1; // Add enough to take cell by 1
+            diceRollFlips++;
+          }
+        }
+      }
     }
 
-    cellRp = Math.round(cellRp * 100) / 100;
-    totalRp += cellRp;
+    totalMapRp += mapRp;
+    totalPlayerRp += playerRp;
 
     statements.push(
       db.prepare('INSERT INTO territory (h3_index, entity_id, rp) VALUES (?, ?, ?) ON CONFLICT(h3_index, entity_id) DO UPDATE SET rp = rp + ?')
-        .bind(cellId, eid, cellRp, cellRp)
+        .bind(cellId, eid, mapRp, mapRp)
     );
 
-    const myNewRp = (ce[eid] || 0) + cellRp;
+    const myNewRp = (ce[eid] || 0) + mapRp;
     if (!isFriendly && myNewRp > ownerRp) cellsCaptured++;
 
     statements.push(
@@ -516,13 +606,18 @@ async function submitRun(env: Env, userId: string, user: Record<string, unknown>
     }
   }
 
-  const rpEarned = Math.round(totalRp);
-  statements.push(db.prepare('INSERT INTO runs (id, user_id, cells_count, rp_earned) VALUES (?, ?, ?, ?)').bind(runId, userId, uniqueCells.length, rpEarned));
+  const rpEarned = Math.round(totalPlayerRp);
+  statements.push(db.prepare('INSERT INTO runs (id, user_id, strava_activity_id, cells_count, rp_earned) VALUES (?, ?, ?, ?, ?)').bind(runId, userId, stravaActivityId || null, uniqueCells.length, rpEarned));
   statements.push(db.prepare('UPDATE users SET rp_lifetime = rp_lifetime + ? WHERE id = ?').bind(rpEarned, userId));
 
   for (let i = 0; i < statements.length; i += 40) { await db.batch(statements.slice(i, i + 40)); }
 
-  return json({ runId, cellsCount: uniqueCells.length, cellsCaptured, rpEarned });
+  return json({
+    runId, cellsCount: uniqueCells.length, cellsCaptured, rpEarned,
+    mapRpPlaced: Math.round(totalMapRp),
+    skillApplied: skill, skillLevel,
+    diceRollFlips: diceRollFlips > 0 ? diceRollFlips : undefined,
+  });
 }
 
 // ==================== POST /api/skills/equip ====================
@@ -718,4 +813,117 @@ async function devResetDb(env: Env): Promise<Response> {
     db.prepare('DELETE FROM territory'),
   ]);
   return json({ success: true, message: 'Territory, discoveries, and runs cleared' });
+}
+
+// Dev endpoint: list ALL past Strava activities (bypasses date filter)
+async function devStravaActivities(env: Env, userId: string, user: Record<string, unknown>): Promise<Response> {
+  const token = await refreshStravaToken(env, userId, user);
+  if (!token) return json({ error: 'Strava not connected', activities: [] });
+
+  const activitiesRes = await fetch(
+    'https://www.strava.com/api/v3/athlete/activities?per_page=100',
+    { headers: { 'Authorization': `Bearer ${token}` } }
+  );
+
+  if (!activitiesRes.ok) return json({ error: 'Failed to fetch Strava activities' }, 502);
+
+  const activities = await activitiesRes.json() as Array<{
+    id: number; name: string; type: string; distance: number;
+    start_date: string; map: { summary_polyline: string | null };
+  }>;
+
+  // Filter to valid types and minimum distance
+  const valid = activities.filter(a =>
+    VALID_ACTIVITY_TYPES.includes(a.type) && a.distance >= MIN_DISTANCE_METERS
+  );
+
+  // Check which are already imported
+  const importedIds = new Set<string>();
+  if (valid.length > 0) {
+    const ids = valid.map(a => String(a.id));
+    for (let i = 0; i < ids.length; i += 50) {
+      const batch = ids.slice(i, i + 50);
+      const ph = batch.map(() => '?').join(',');
+      const rows = await env.DB.prepare(
+        `SELECT strava_activity_id FROM runs WHERE strava_activity_id IN (${ph})`
+      ).bind(...batch).all();
+      for (const r of rows.results as Array<Record<string, unknown>>) {
+        importedIds.add(r.strava_activity_id as string);
+      }
+    }
+  }
+
+  return json({
+    activities: valid.map(a => ({
+      id: String(a.id),
+      name: a.name,
+      type: a.type,
+      distance: a.distance,
+      startDate: a.start_date,
+      polyline: a.map?.summary_polyline || null,
+      imported: importedIds.has(String(a.id)),
+    })),
+  });
+}
+
+// ==================== Strava Sync ====================
+
+// Returns new (unimported) activities since strava_connected_at with polylines for client-side H3 processing
+async function stravaSync(env: Env, userId: string, user: Record<string, unknown>): Promise<Response> {
+  if (!user.strava_id) return json({ activities: [] });
+
+  const token = await refreshStravaToken(env, userId, user);
+  if (!token) return json({ activities: [], error: 'Token refresh failed' });
+
+  const connectedAt = user.strava_connected_at as string | null;
+  const afterEpoch = connectedAt ? Math.floor(new Date(connectedAt).getTime() / 1000) : Math.floor(Date.now() / 1000);
+
+  const activitiesRes = await fetch(
+    `https://www.strava.com/api/v3/athlete/activities?after=${afterEpoch}&per_page=30`,
+    { headers: { 'Authorization': `Bearer ${token}` } }
+  );
+
+  if (!activitiesRes.ok) {
+    console.error('Strava API error:', activitiesRes.status);
+    return json({ activities: [], error: 'Strava API error' });
+  }
+
+  const activities = await activitiesRes.json() as Array<{
+    id: number; name: string; type: string; distance: number;
+    start_date: string; map: { summary_polyline: string | null };
+  }>;
+
+  // Filter to valid types and minimum distance
+  const valid = activities.filter(a =>
+    VALID_ACTIVITY_TYPES.includes(a.type) && a.distance >= MIN_DISTANCE_METERS
+  );
+
+  // Check which are already imported
+  const importedIds = new Set<string>();
+  if (valid.length > 0) {
+    const ids = valid.map(a => String(a.id));
+    for (let i = 0; i < ids.length; i += 50) {
+      const batch = ids.slice(i, i + 50);
+      const ph = batch.map(() => '?').join(',');
+      const rows = await env.DB.prepare(
+        `SELECT strava_activity_id FROM runs WHERE strava_activity_id IN (${ph})`
+      ).bind(...batch).all();
+      for (const r of rows.results as Array<Record<string, unknown>>) {
+        importedIds.add(r.strava_activity_id as string);
+      }
+    }
+  }
+
+  const pending = valid.filter(a => !importedIds.has(String(a.id)));
+
+  return json({
+    activities: pending.map(a => ({
+      id: String(a.id),
+      name: a.name,
+      type: a.type,
+      distance: a.distance,
+      startDate: a.start_date,
+      polyline: a.map?.summary_polyline || null,
+    })),
+  });
 }
