@@ -94,6 +94,7 @@ html, body {
 /* ========== MAP ========== */
 .map-container { width: 100%; height: 100%; position: relative; }
 #map { width: 100%; height: 100%; background: var(--bg-primary); }
+.leaflet-tile-pane { filter: brightness(1.8) contrast(1.05); }
 
 .map-loading {
   position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -221,12 +222,15 @@ html, body {
 @keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.3); opacity: 0.6; } }
 
 /* Hex labels */
-.hex-label { text-align: center; text-shadow: 0 1px 3px #000, 0 0 6px rgba(0,0,0,0.9); pointer-events: none; line-height: 1.2; }
-.hex-rp-main { font-size: 16px; font-weight: 800; }
-.hex-bar { display: flex; height: 3px; border-radius: 2px; overflow: hidden; margin: 2px 4px; background: rgba(255,255,255,0.08); }
+.hex-label { text-align: center; text-shadow: 0 1px 2px #000, 0 0 4px rgba(0,0,0,0.8); pointer-events: none; line-height: 1.2; }
+.hex-label-pill { }
+.hex-rp-main { font-size: 14px; font-weight: 800; }
+.hex-bar { display: flex; height: 3px; border-radius: 2px; overflow: hidden; margin: 2px 2px; background: rgba(255,255,255,0.08); }
 .hex-bar-fill { height: 100%; min-width: 2px; }
-.hex-rp-sub { font-size: 11px; font-weight: 700; opacity: 0.9; }
+.hex-rp-sub { font-size: 10px; font-weight: 700; opacity: 0.9; }
 .hex-own-badge { font-size: 10px; line-height: 1; text-align: center; text-shadow: 0 1px 3px #000; pointer-events: none; }
+.hex-label-compact { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.hex-label-compact .hex-bar { width: 24px; margin: 1px 0; }
 
 /* ========== GROUP PAGE ========== */
 .empty-state { text-align: center; padding: 48px 16px; color: var(--text-secondary); }

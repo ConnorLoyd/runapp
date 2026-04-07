@@ -3,7 +3,7 @@ export function getScripts(): string {
 (function() {
   var currentUser = null;
   var territoryState = null;
-  var H3_RES = 9;
+  var H3_RES = 8;
   var DEFAULT_ZOOM = 15;
   var LEVEL_COSTS = [5, 15, 30, 50, 80];
   var SKILL_ICONS = {
@@ -743,8 +743,12 @@ export function getScripts(): string {
 
   function initMap() {
     if (typeof L === 'undefined' || typeof h3 === 'undefined') return;
-    turfMap = L.map('map', { zoomControl: false, attributionControl: false, minZoom: 13, maxZoom: 18 });
+    turfMap = L.map('map', { zoomControl: false, attributionControl: false, minZoom: 10, maxZoom: 18 });
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd' }).addTo(turfMap);
+    // Custom pane for territory fills — screen blend colorizes dark background, roads stay bright
+    turfMap.createPane('hexPane');
+    turfMap.getPane('hexPane').style.mixBlendMode = 'screen';
+    turfMap.getPane('hexPane').style.zIndex = '450';
     fogLayer = L.layerGroup().addTo(turfMap);
     hexLayer = L.layerGroup().addTo(turfMap);
 
@@ -945,75 +949,68 @@ export function getScripts(): string {
 
     var center = turfMap.getCenter();
     var zoom = turfMap.getZoom();
-    var renderK = zoom >= 16 ? 12 : zoom >= 15 ? 16 : zoom >= 14 ? 24 : 32;
-    var showLabels = zoom >= 15;
+    var bounds = turfMap.getBounds();
+    var userEid = territoryState.userEntityId;
+    var userInfo = userEid ? (territoryState.entities[userEid] || {}) : {};
+    var myColor = userInfo.color || '#ff6a00';
+
+    // At low zoom (< 12), use sparse rendering — only cells with territory data
+    if (zoom < 12) {
+      renderSparseTerritory(bounds, zoom, userEid, myColor);
+      return;
+    }
+
+    // kRing sizes adjusted for H3 res 8 (larger cells)
+    var renderK = zoom >= 16 ? 8 : zoom >= 15 ? 10 : zoom >= 14 ? 14 : zoom >= 13 ? 18 : 22;
+    var showFullLabels = zoom >= 14;
+    var showCompactLabels = zoom === 13;
     var viewCell = h3.geoToH3(center.lat, center.lng, H3_RES);
     var visibleCells = h3.kRing(viewCell, renderK);
-    var bounds = turfMap.getBounds();
 
     visibleCells.forEach(function(cell) {
       var cellCenter = h3.h3ToGeo(cell);
-      if (cellCenter[0] < bounds.getSouth() - 0.005 || cellCenter[0] > bounds.getNorth() + 0.005 ||
-          cellCenter[1] < bounds.getWest() - 0.005 || cellCenter[1] > bounds.getEast() + 0.005) return;
+      if (cellCenter[0] < bounds.getSouth() - 0.01 || cellCenter[0] > bounds.getNorth() + 0.01 ||
+          cellCenter[1] < bounds.getWest() - 0.01 || cellCenter[1] > bounds.getEast() + 0.01) return;
 
       var isExplored = territoryState.explored.has(cell);
       var boundary = h3.h3ToGeoBoundary(cell);
 
-      // All cells get a subtle grid line
-      L.polygon(boundary, { color: '#ffffff', fillColor: 'transparent', fillOpacity: 0, weight: 0.3, opacity: 0.06, interactive: false }).addTo(hexLayer);
-
-      // Get territory data for this cell (works for both explored and fog)
+      // Get territory data for this cell
       var cp = territoryState.cells[cell];
       var maxEid = null; var maxRp = 0;
       if (cp) { for (var eid in cp) { if (cp[eid] > maxRp) { maxEid = eid; maxRp = cp[eid]; } } }
 
       if (!isExplored) {
-        // Fog of war: territory colors visible but darkened under fog
+        // Fog of war
         if (maxEid && maxRp > 0) {
           var fogInfo = territoryState.entities[maxEid] || {};
           var fogColor = fogInfo.color || '#888';
-          // Territory color layer — tint visible, map roads show through
-          L.polygon(boundary, { color: fogColor, fillColor: fogColor, fillOpacity: 0.2, weight: 0.8, opacity: 0.35, interactive: false }).addTo(fogLayer);
-          // Light dark overlay to mute slightly
-          L.polygon(boundary, { color: 'transparent', fillColor: '#05050a', fillOpacity: 0.25, weight: 0, interactive: false }).addTo(fogLayer);
+          L.polygon(boundary, { color: fogColor, fillColor: fogColor, fillOpacity: 0.06, weight: 0.5, opacity: 0.15, interactive: false }).addTo(fogLayer);
+          L.polygon(boundary, { color: 'transparent', fillColor: '#05050a', fillOpacity: 0.05, weight: 0, interactive: false }).addTo(fogLayer);
         } else {
-          // Unclaimed fog — light dark overlay, roads still visible
-          L.polygon(boundary, { color: 'transparent', fillColor: '#05050a', fillOpacity: 0.3, weight: 0, interactive: false }).addTo(fogLayer);
+          L.polygon(boundary, { color: 'transparent', fillColor: '#05050a', fillOpacity: 0.08, weight: 0, interactive: false }).addTo(fogLayer);
         }
         return;
       }
 
-      // Explored cells: show grid outline
-      L.polygon(boundary, { color: '#ffffff', fillColor: 'transparent', fillOpacity: 0, weight: 0.3, opacity: 0.1, interactive: false }).addTo(hexLayer);
-
-      // Explored cells with territory
+      // Explored cells with no territory — skip (clean map)
       if (!maxEid || maxRp === 0) return;
 
-      var userEid = territoryState.userEntityId;
       var isYours = maxEid === userEid;
       var info = territoryState.entities[maxEid] || {};
       var ownerColor = info.color || '#ff6a00';
-      var userInfo = userEid ? (territoryState.entities[userEid] || {}) : {};
-      var myColor = userInfo.color || '#ff6a00';
 
       if (isYours) {
-        // Glow layer — wide translucent border behind the cell
-        L.polygon(boundary, {
-          color: myColor, fillColor: 'transparent', fillOpacity: 0,
-          weight: 8, opacity: 0.25, interactive: false
-        }).addTo(hexLayer);
-        // Main cell — brighter fill + solid border
+        // Your cells: screen-blended fill colorizes dark map background
         var poly = L.polygon(boundary, {
-          color: myColor, fillColor: myColor, fillOpacity: 0.4,
-          weight: 2, opacity: 0.9, interactive: true
+          pane: 'hexPane', color: myColor, fillColor: myColor, fillOpacity: 0.35,
+          weight: 0.5, opacity: 0.15, interactive: true
         }).addTo(hexLayer);
-        // Ownership badge — small shield icon only when zoomed in
-        // (integrated into label below)
       } else {
-        // Enemy cells — muted, no glow
+        // Enemy cells: lighter screen-blended tint
         var poly = L.polygon(boundary, {
-          color: ownerColor, fillColor: ownerColor, fillOpacity: 0.2,
-          weight: 1.5, opacity: 0.6, interactive: true
+          pane: 'hexPane', color: ownerColor, fillColor: ownerColor, fillOpacity: 0.2,
+          weight: 0.5, opacity: 0.1, interactive: true
         }).addTo(hexLayer);
       }
 
@@ -1022,48 +1019,112 @@ export function getScripts(): string {
         poly.on('click', function() { showCellInfo(cellId, eId, rp, yours); });
       })(cell, maxEid, maxRp, isYours);
 
-      if (showLabels) {
-        var userEid = territoryState.userEntityId;
-        var userInfo = userEid ? (territoryState.entities[userEid] || {}) : {};
-        var userColor = userInfo.color || '#4ade80';
-        var ownerRpVal = maxRp;
-        var challengerRp = 0;
-        var challengerEid = null;
-        if (isYours) {
-          ownerRpVal = cp[userEid] || 0;
-          for (var e in cp) { if (e !== userEid && cp[e] > challengerRp) { challengerRp = cp[e]; challengerEid = e; } }
+      // Labels — only show on cells where user has RP
+      if (showFullLabels || showCompactLabels) {
+        // Check if user has RP in this cell
+        var userRpInCell = (userEid && cp[userEid]) ? cp[userEid] : 0;
+        if (userRpInCell === 0 && !isYours) {
+          // User has no RP here and doesn't own it — skip label
         } else {
-          ownerRpVal = maxRp;
-          challengerRp = (userEid && cp[userEid]) ? cp[userEid] : 0;
-        }
+          var userColor = userInfo.color || '#4ade80';
+          var ownerRpVal = maxRp;
+          var challengerRp = 0;
+          var challengerEid = null;
+          if (isYours) {
+            ownerRpVal = cp[userEid] || 0;
+            for (var e in cp) { if (e !== userEid && cp[e] > challengerRp) { challengerRp = cp[e]; challengerEid = e; } }
+          } else {
+            ownerRpVal = maxRp;
+            challengerRp = userRpInCell;
+          }
 
-        // Colors: defense = owner entity color, attack = attacker entity color
-        var defenseColor = ownerColor;
-        var attackColor;
-        if (isYours) {
-          // Your cell: attacker color = attacker's entity color
-          var chalInfo = challengerEid ? (territoryState.entities[challengerEid] || {}) : {};
-          attackColor = chalInfo.color || '#ef4444';
-        } else {
-          // Enemy cell: your attack color = your entity color
-          attackColor = userColor;
-        }
+          // Colors: defense = owning entity color, attack = attacker entity color
+          var defenseColor = ownerColor;
+          var attackColor;
+          if (isYours) {
+            // Your cell: attacker = highest enemy, use their entity color
+            var chalInfo = challengerEid ? (territoryState.entities[challengerEid] || {}) : {};
+            attackColor = chalInfo.color || '#ef4444';
+          } else {
+            // Enemy cell: your attack color = your entity color
+            attackColor = userColor;
+          }
 
-        var total = ownerRpVal + challengerRp;
-        var chalPct = total > 0 ? Math.round((challengerRp / total) * 100) : 0;
-        var barHtml = '<div class="hex-bar"><div class="hex-bar-fill" style="width:' + chalPct + '%;background:' + attackColor + '"></div><div class="hex-bar-fill" style="width:' + (100 - chalPct) + '%;background:' + defenseColor + '"></div></div>';
+          var total = ownerRpVal + challengerRp;
+          var chalPct = total > 0 ? Math.round((challengerRp / total) * 100) : 0;
+          var barHtml = '<div class="hex-bar"><div class="hex-bar-fill" style="width:' + chalPct + '%;background:' + attackColor + '"></div><div class="hex-bar-fill" style="width:' + (100 - chalPct) + '%;background:' + defenseColor + '"></div></div>';
+          var hasContest = challengerRp > 0;
 
-        var labelHtml = '<div class="hex-label">'
-          + (isYours ? '<div class="hex-own-badge"><svg viewBox="0 0 24 24" width="13" height="13" fill="#ffb830" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>' : '')
-          + '<div class="hex-rp-main" style="color:' + defenseColor + '">' + Math.round(ownerRpVal) + '</div>';
-        if (challengerRp > 0) {
-          labelHtml += barHtml;
-          labelHtml += '<div class="hex-rp-sub" style="color:' + attackColor + '">' + Math.round(challengerRp) + '</div>';
+          if (showFullLabels) {
+            var labelHtml = '<div class="hex-label hex-label-pill">'
+              + (isYours ? '<div class="hex-own-badge"><svg viewBox="0 0 24 24" width="11" height="11" fill="#ffb830" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>' : '')
+              + '<div class="hex-rp-main" style="color:' + defenseColor + '">' + Math.round(ownerRpVal) + '</div>';
+            if (hasContest) {
+              labelHtml += barHtml;
+              labelHtml += '<div class="hex-rp-sub" style="color:' + attackColor + '">' + Math.round(challengerRp) + '</div>';
+            }
+            labelHtml += '</div>';
+            L.marker(cellCenter, { icon: L.divIcon({ className: '', html: labelHtml, iconSize: [56, 52], iconAnchor: [28, 26] }), interactive: false }).addTo(hexLayer);
+          } else if (hasContest) {
+            // Compact labels (zoom 13): star + bar only, only if contested
+            var labelHtml = '<div class="hex-label hex-label-compact hex-label-pill">';
+            if (isYours) {
+              labelHtml += '<div class="hex-own-badge"><svg viewBox="0 0 24 24" width="9" height="9" fill="#ffb830" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>';
+            }
+            labelHtml += barHtml + '</div>';
+            L.marker(cellCenter, { icon: L.divIcon({ className: '', html: labelHtml, iconSize: [36, 22], iconAnchor: [18, 11] }), interactive: false }).addTo(hexLayer);
+          }
         }
-        labelHtml += '</div>';
-        L.marker(cellCenter, { icon: L.divIcon({ className: '', html: labelHtml, iconSize: [52, 50], iconAnchor: [26, 25] }), interactive: false }).addTo(hexLayer);
       }
     });
+  }
+
+  // Sparse rendering for low zoom levels (< 12) — only cells with territory data
+  function renderSparseTerritory(bounds, zoom, userEid, myColor) {
+    var pad = 0.03;
+    var south = bounds.getSouth() - pad, north = bounds.getNorth() + pad;
+    var west = bounds.getWest() - pad, east = bounds.getEast() + pad;
+
+    var useCircles = zoom <= 10;
+    var circleRadius = zoom <= 10 ? 4 : 5;
+
+    for (var cell in territoryState.cells) {
+      var cellCenter = h3.h3ToGeo(cell);
+      if (cellCenter[0] < south || cellCenter[0] > north || cellCenter[1] < west || cellCenter[1] > east) continue;
+
+      var cp = territoryState.cells[cell];
+      var maxEid = null; var maxRp = 0;
+      for (var eid in cp) { if (cp[eid] > maxRp) { maxEid = eid; maxRp = cp[eid]; } }
+      if (!maxEid || maxRp === 0) continue;
+
+      var isYours = maxEid === userEid;
+      var info = territoryState.entities[maxEid] || {};
+      var ownerColor = info.color || '#ff6a00';
+      var displayColor = isYours ? myColor : ownerColor;
+
+      if (useCircles) {
+        L.circleMarker([cellCenter[0], cellCenter[1]], {
+          pane: 'hexPane',
+          radius: isYours ? circleRadius + 1 : circleRadius,
+          color: displayColor, fillColor: displayColor,
+          fillOpacity: isYours ? 0.55 : 0.3,
+          weight: isYours ? 1.5 : 0.5,
+          opacity: isYours ? 0.7 : 0.35,
+          interactive: false
+        }).addTo(hexLayer);
+      } else {
+        // Zoom 11: simplified polygons
+        var boundary = h3.h3ToGeoBoundary(cell);
+        L.polygon(boundary, {
+          pane: 'hexPane',
+          color: displayColor, fillColor: displayColor,
+          fillOpacity: isYours ? 0.25 : 0.12,
+          weight: isYours ? 1.2 : 0.6,
+          opacity: isYours ? 0.5 : 0.3,
+          interactive: false
+        }).addTo(hexLayer);
+      }
+    }
   }
 
   function updateMapOverlayStats() {
